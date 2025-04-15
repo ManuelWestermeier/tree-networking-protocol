@@ -86,7 +86,7 @@ struct Node
     if (connections.empty())
     {
       Serial.println("No available connections to send data.");
-      return;
+      return 0;
     }
 
     Match bestMatch = {0, 0};
