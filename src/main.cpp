@@ -1,6 +1,5 @@
 #include <Arduino.h>
 #include <HardwareSerial.h>
-
 #include "./protocoll/index.hpp"
 
 #define IS_SENDER 1
@@ -26,8 +25,9 @@ void setup()
   u1.push_back(3);
 
   Address u2;
-  u1.push_back(1);
-  u1.push_back(27);
+  // FIX: Push into u2, not u1
+  u2.push_back(1);
+  u2.push_back(27);
 
 #if IS_SENDER
   node.logicalNode.you = u1;
