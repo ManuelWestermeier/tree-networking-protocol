@@ -61,6 +61,10 @@ struct Pocket
   void computeCheckSum()
   {
     checksum = 0;
+    for (const auto &part : address)
+    {
+      checksum ^ part;
+    }
     for (uint8_t i = 0; i < sizeof(data); i++)
     {
       checksum ^= data[i];
