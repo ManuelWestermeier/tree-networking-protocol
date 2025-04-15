@@ -17,7 +17,7 @@ void setup()
   node.logicalNode.you.push_back(2);
   node.logicalNode.you.push_back(3);
 
-  node.connections.push_back(25);
+  // node.connections.push_back(25);
 
   node.start();
 

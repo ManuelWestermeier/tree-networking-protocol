@@ -5,12 +5,30 @@
 #include "logical.hpp"
 
 #define NORMAL_SEND 1
+#define RETURN_OK 2
+#define RESEND_TIMEOUT 5000UL // milliseconds
+#define MAX_ATTEMPTS 3
+
+using std::vector;
+
+// Custom structure to hold a pending packet with its current state.
+struct PendingPacket
+{
+  Pocket pocket;
+  uint8_t sendPin;
+  uint8_t attempts;
+  unsigned long lastSendTime; // in milliseconds
+
+  // Custom constructor to initialize all members.
+  PendingPacket(const Pocket &p, uint8_t pin, uint8_t att, unsigned long time)
+      : pocket(p), sendPin(pin), attempts(att), lastSendTime(time) {}
+};
 
 struct PhysikalNode
 {
-  vector<uint8_t> connections;
   Node logicalNode;
   TaskHandle_t taskHandle = nullptr;
+  vector<PendingPacket> pendingPackets; // pending packets waiting for acknowledgment
 
   static void loopTask(void *params)
   {
@@ -43,7 +61,6 @@ struct PhysikalNode
     {
       uint16_t addrSize = readUInt16(pin);
       Address address;
-
       for (int i = 0; i < addrSize; i++)
       {
         address.push_back(readUInt16(pin));
@@ -68,8 +85,10 @@ struct PhysikalNode
     }
     else if (pocketType == RETURN_OK)
     {
-      // read pocket hash
-      // delete hash form the hashmap with the sended pocjets (to ensure, that a pocket is good)
+      // For an acknowledgment, read the 16-bit hash.
+      uint16_t hash = readUInt16(pin);
+      // Process the acknowledgment by removing the matching pending packet.
+      acknowledge(hash);
     }
   }
 
@@ -103,32 +122,22 @@ struct PhysikalNode
 
     sendUInt16(pin, p.checksum);
 
-    pinMode(pin, INPUT); // allow receiving again
-  }
+    pinMode(pin, INPUT); // switch back to receive mode
 
-  void loop()
-  {
-    // Pulse each connection to signal presence
-    for (auto pin : connections)
+    // Only add the packet if it doesn't already exist in pendingPackets
+    bool exists = false;
+    for (auto &pending : pendingPackets)
     {
-      pinMode(pin, OUTPUT);
-      digitalWrite(pin, HIGH);
-      delayMicroseconds(1000);
-      digitalWrite(pin, LOW);
-      pinMode(pin, INPUT);
-    }
-
-    while (true)
-    {
-      for (auto pin : connections)
+      if (pending.pocket.checksum == p.checksum)
       {
-        if (digitalRead(pin) == HIGH)
-        {
-          delayMicroseconds(100);
-          receivePocket(pin);
-        }
+        exists = true;
+        break;
       }
-      delayMicroseconds(100);
+    }
+    if (!exists)
+    {
+      // Use the custom constructor to add the pending packet.
+      pendingPackets.push_back(PendingPacket(p, pin, 1, millis()));
     }
   }
 
@@ -143,6 +152,104 @@ struct PhysikalNode
     else
     {
       sendNormalPocket(p, sendPin);
+    }
+  }
+
+  void acknowledge(uint16_t hash)
+  {
+    for (auto it = pendingPackets.begin(); it != pendingPackets.end(); ++it)
+    {
+      if (it->pocket.checksum == hash)
+      {
+        Serial.print("ACK received for packet: ");
+        Serial.println(hash, HEX);
+        pendingPackets.erase(it);
+        break;
+      }
+    }
+  }
+
+  void checkPendingAcks()
+  {
+    unsigned long currentTime = millis();
+    for (size_t i = 0; i < pendingPackets.size();)
+    {
+      PendingPacket &pending = pendingPackets[i];
+      if (currentTime - pending.lastSendTime > RESEND_TIMEOUT)
+      {
+        if (pending.attempts < MAX_ATTEMPTS)
+        {
+          pending.attempts++;
+          pending.lastSendTime = currentTime;
+          Serial.print("Resending packet ");
+          Serial.print(pending.pocket.checksum, HEX);
+          Serial.print(" attempt ");
+          Serial.println(pending.attempts);
+          sendNormalPocket(pending.pocket, pending.sendPin);
+          ++i;
+        }
+        else
+        {
+          Serial.print("Packet ");
+          Serial.print(pending.pocket.checksum, HEX);
+          Serial.println(" failed 3 times. Removing connection and retrying on a new pin.");
+          uint8_t failedPin = pending.sendPin;
+          for (auto it = logicalNode.connections.begin(); it != logicalNode.connections.end(); ++it)
+          {
+            if (it->pin == failedPin)
+            {
+              logicalNode.connections.erase(it);
+              break;
+            }
+          }
+          if (!logicalNode.connections.empty())
+          {
+            uint8_t newPin = logicalNode.connections[0].pin; // choose a new available connection
+            Serial.print("Resending on new connection pin: ");
+            Serial.println(newPin);
+            pending.sendPin = newPin;
+            pending.attempts = 1;
+            pending.lastSendTime = currentTime;
+            sendNormalPocket(pending.pocket, newPin);
+            ++i;
+          }
+          else
+          {
+            Serial.println("No available logicalNode.connections to resend packet.");
+            pendingPackets.erase(pendingPackets.begin() + i);
+          }
+        }
+      }
+      else
+      {
+        ++i;
+      }
+    }
+  }
+
+  void loop()
+  {
+    // Pulse each connection to signal presence.
+    for (auto conn : logicalNode.connections)
+    {
+      pinMode(conn.pin, OUTPUT);
+      digitalWrite(conn.pin, HIGH);
+      delayMicroseconds(1000);
+      digitalWrite(conn.pin, LOW);
+      pinMode(conn.pin, INPUT);
+    }
+
+    while (true)
+    {
+      for (auto conn : logicalNode.connections)
+      {
+        if (digitalRead(conn.pin) == HIGH)
+        {
+          delayMicroseconds(100);
+          receivePocket(conn.pin);
+        }
+      }
+      checkPendingAcks();
     }
   }
 
