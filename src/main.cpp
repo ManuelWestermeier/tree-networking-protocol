@@ -2,11 +2,13 @@
 #include <HardwareSerial.h>
 #include "./protocoll/index.hpp"
 
-#define IS_SENDER 1
+#define IS_SENDER 0
+
+PhysikalNode node;
 
 void setup()
 {
-  Serial.begin(9600);
+  Serial.begin(115200);
   while (!Serial)
   {
   }
@@ -17,15 +19,12 @@ void setup()
   Serial.println();
   Serial.println("Starting...");
 
-  PhysikalNode node;
-
   Address u1;
   u1.push_back(1);
   u1.push_back(2);
   u1.push_back(3);
 
   Address u2;
-  // FIX: Push into u2, not u1
   u2.push_back(1);
   u2.push_back(27);
 
@@ -37,6 +36,7 @@ void setup()
   node.logicalNode.connections.push_back({u1, 25});
 #endif
 
+  // Start the background task.
   node.start();
 
 #if IS_SENDER

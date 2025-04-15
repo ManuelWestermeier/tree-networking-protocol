@@ -58,6 +58,7 @@ struct Pocket
   char data[11] = "HELLOWORLD";
   uint16_t checksum;
 
+  // FIX: Use ^= to actually update checksum.
   void computeCheckSum()
   {
     checksum = 0;

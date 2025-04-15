@@ -11,7 +11,6 @@
 
 using std::vector;
 
-// Custom structure to hold a pending packet with its current state.
 struct PendingPacket
 {
   Pocket pocket;
@@ -19,7 +18,6 @@ struct PendingPacket
   uint8_t attempts;
   unsigned long lastSendTime; // in milliseconds
 
-  // Custom constructor to initialize all members.
   PendingPacket(const Pocket &p, uint8_t pin, uint8_t att, unsigned long time)
       : pocket(p), sendPin(pin), attempts(att), lastSendTime(time) {}
 };
@@ -28,7 +26,7 @@ struct PhysikalNode
 {
   Node logicalNode;
   TaskHandle_t taskHandle = nullptr;
-  vector<PendingPacket> pendingPackets; // pending packets waiting for acknowledgment
+  vector<PendingPacket> pendingPackets;
 
   static void loopTask(void *params)
   {
@@ -85,9 +83,7 @@ struct PhysikalNode
     }
     else if (pocketType == RETURN_OK)
     {
-      // For an acknowledgment, read the 16-bit hash.
       uint16_t hash = readUInt16(pin);
-      // Process the acknowledgment by removing the matching pending packet.
       acknowledge(hash);
     }
   }
@@ -124,7 +120,7 @@ struct PhysikalNode
 
     pinMode(pin, INPUT); // switch back to receive mode
 
-    // Only add the packet if it doesn't already exist in pendingPackets
+    // Add to pendingPackets if it doesn’t already exist
     bool exists = false;
     for (auto &pending : pendingPackets)
     {
@@ -136,7 +132,6 @@ struct PhysikalNode
     }
     if (!exists)
     {
-      // Use the custom constructor to add the pending packet.
       pendingPackets.push_back(PendingPacket(p, pin, 1, millis()));
     }
   }
@@ -204,7 +199,7 @@ struct PhysikalNode
           }
           if (!logicalNode.connections.empty())
           {
-            uint8_t newPin = logicalNode.connections[0].pin; // choose a new available connection
+            uint8_t newPin = logicalNode.connections[0].pin;
             Serial.print("Resending on new connection pin: ");
             Serial.println(newPin);
             pending.sendPin = newPin;
@@ -250,6 +245,9 @@ struct PhysikalNode
         }
       }
       checkPendingAcks();
+
+      // FIX: Yield to other tasks to avoid watchdog resets.
+      vTaskDelay(1 / portTICK_PERIOD_MS);
     }
   }
 
