@@ -1,22 +1,8 @@
-#pragma once
-
 #include <Arduino.h>
 #include <vector>
-#include <algorithm>
-#include <string.h>
-#include <HardwareSerial.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
-
-#include "./logical.hpp"
-
-using namespace std;
-
-struct PhysikalPocket
-{
-  uint8_t pocketType;
-  Pocket logicalPocket;
-};
+#include "logical.hpp"
 
 #define NORMAL_SEND 1
 
@@ -28,8 +14,7 @@ struct PhysikalNode
 
   static void loopTask(void *params)
   {
-    PhysikalNode *instance = static_cast<PhysikalNode *>(params);
-    instance->loop();
+    static_cast<PhysikalNode *>(params)->loop();
   }
 
   uint8_t readByte(uint8_t pin)
@@ -37,8 +22,7 @@ struct PhysikalNode
     uint8_t value = 0;
     for (int i = 0; i < 8; i++)
     {
-      value <<= 1;
-      value |= digitalRead(pin);
+      value |= (digitalRead(pin) << (7 - i));
       delayMicroseconds(100);
     }
     return value;
@@ -46,102 +30,120 @@ struct PhysikalNode
 
   uint16_t readUInt16(uint8_t pin)
   {
-    uint16_t low = readByte(pin);
-    uint16_t high = readByte(pin);
+    uint8_t low = readByte(pin);
+    uint8_t high = readByte(pin);
     return (high << 8) | low;
   }
 
   void receivePocket(uint8_t pin)
   {
     uint8_t pocketType = readByte(pin);
-    uint8_t addrSize = readUInt16(pin);
-
+    uint16_t addrSize = readUInt16(pin);
     Address address;
-    address.reserve(addrSize);
 
     for (int i = 0; i < addrSize; i++)
     {
       address.push_back(readUInt16(pin));
     }
 
-    uint8_t data[10];
+    char data[11];
     for (int i = 0; i < 10; i++)
     {
       data[i] = readByte(pin);
     }
+    data[10] = '\0';
 
     uint16_t checksum = readUInt16(pin);
 
-    const char *d = (char *)data;
-    Pocket logicalPocket(address, d);
-
-    if (logicalPocket.checksum != checksum)
+    Pocket p(address, data);
+    if (p.checksum != checksum)
     {
-      Serial.println("Error: pp.logicalPocket.checksum != checksum");
+      Serial.println("Checksum mismatch!");
       return;
     }
 
-    Serial.println("Packet Received");
-
     if (pocketType == NORMAL_SEND)
-      on(logicalPocket.address, logicalPocket.data);
+      on(p);
+  }
+
+  void sendByte(uint8_t pin, uint8_t byte)
+  {
+    for (int i = 7; i >= 0; i--)
+    {
+      digitalWrite(pin, (byte >> i) & 1);
+      delayMicroseconds(100);
+    }
+  }
+
+  void sendUInt16(uint8_t pin, uint16_t val)
+  {
+    sendByte(pin, val & 0xFF);
+    sendByte(pin, val >> 8);
+  }
+
+  void sendNormalPocket(Pocket &p, uint8_t pin)
+  {
+    pinMode(pin, OUTPUT);
+
+    sendByte(pin, NORMAL_SEND);
+    sendUInt16(pin, p.address.size());
+
+    for (auto a : p.address)
+      sendUInt16(pin, a);
+
+    for (int i = 0; i < 10; i++)
+      sendByte(pin, p.data[i]);
+
+    sendUInt16(pin, p.checksum);
+
+    pinMode(pin, INPUT); // allow receiving again
   }
 
   void loop()
   {
-    for (const auto &connection : connections)
+    // Pulse each connection to signal presence
+    for (auto pin : connections)
     {
-      pinMode(connection, OUTPUT);
-      digitalWrite(connection, HIGH);
+      pinMode(pin, OUTPUT);
+      digitalWrite(pin, HIGH);
       delayMicroseconds(1000);
-      digitalWrite(connection, LOW);
-      pinMode(connection, INPUT);
+      digitalWrite(pin, LOW);
+      pinMode(pin, INPUT);
     }
 
     while (true)
     {
-      for (const auto &connection : connections)
+      for (auto pin : connections)
       {
-        if (digitalRead(connection) == HIGH)
+        if (digitalRead(pin) == HIGH)
         {
           delayMicroseconds(100);
-          receivePocket(connection);
+          receivePocket(pin);
         }
       }
       delayMicroseconds(100);
     }
   }
 
-  void sendNoramlPocket(Pocket p, uint8_t pin)
+  void on(Pocket p)
   {
-  }
-
-  void on(Address to, const char *data)
-  {
-    auto p = Pocket(to, data);
     uint8_t sendPin = logicalNode.recieve(p);
-
-    if (!sendPin)
+    if (sendPin == 0)
     {
-      Serial.print("Data Recieved: ");
-      Serial.println(String(p.data));
-      return;
+      Serial.print("Received: ");
+      Serial.println(p.data);
     }
-
-    sendNoramlPocket(p, sendPin);
+    else
+    {
+      sendNormalPocket(p, sendPin);
+    }
   }
 
   void start()
   {
     if (taskHandle == nullptr)
     {
-      xTaskCreate(
-          loopTask,
-          "Protocol Task",
-          2048,
-          this,
-          1,
-          &taskHandle);
+      xTaskCreate(loopTask, "PhysLoop", 4096, this, 1, &taskHandle);
     }
   }
 
