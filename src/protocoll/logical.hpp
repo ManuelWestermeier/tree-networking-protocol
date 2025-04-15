@@ -81,7 +81,7 @@ struct Node
   vector<Connection> connections;
   Address you;
 
-  void send(Pocket p)
+  uint8_t send(Pocket p)
   {
     if (connections.empty())
     {
@@ -120,18 +120,19 @@ struct Node
 
     Serial.print("Sending data via pin ");
     Serial.println(sendConnection.pin);
+
+    return sendConnection.pin;
   }
 
-  void recieve(Pocket p)
+  uint8_t recieve(Pocket p)
   {
     if (eq(you, p.address))
     {
-      Serial.print("Data Recieved: ");
-      Serial.println(String(p.data));
+      return 0;
     }
     else
     {
-      send(p);
+      return send(p);
     }
   }
 };

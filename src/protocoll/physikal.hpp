@@ -18,6 +18,8 @@ struct PhysikalPocket
   Pocket logicalPocket;
 };
 
+#define NORMAL_SEND 1
+
 struct PhysikalNode
 {
   vector<uint8_t> connections;
@@ -72,16 +74,17 @@ struct PhysikalNode
 
     const char *d = (char *)data;
     Pocket logicalPocket(address, d);
- 
-    PhysikalPocket pp = {pocketType, logicalPocket};
 
-    if (pp.logicalPocket.checksum != checksum)
+    if (logicalPocket.checksum != checksum)
     {
       Serial.println("Error: pp.logicalPocket.checksum != checksum");
       return;
     }
 
     Serial.println("Packet Received");
+
+    if (pocketType == NORMAL_SEND)
+      on(logicalPocket.address, logicalPocket.data);
   }
 
   void loop()
@@ -105,13 +108,27 @@ struct PhysikalNode
           receivePocket(connection);
         }
       }
-      vTaskDelay(1000 / portTICK_PERIOD_MS);
+      delayMicroseconds(100);
     }
   }
 
-  void send(Address to, uint8_t *data)
+  void sendNoramlPocket(Pocket p, uint8_t pin)
   {
-    // Dummy send function
+  }
+
+  void on(Address to, const char *data)
+  {
+    auto p = Pocket(to, data);
+    uint8_t sendPin = logicalNode.recieve(p);
+
+    if (!sendPin)
+    {
+      Serial.print("Data Recieved: ");
+      Serial.println(String(p.data));
+      return;
+    }
+
+    sendNoramlPocket(p, sendPin);
   }
 
   void start()
