@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <HardwareSerial.h>
 
 #include "./protocoll/index.hpp"
 
@@ -8,15 +9,13 @@ void setup()
   while (!Serial)
   {
   }
+  Serial.println("Starting...");
 
   PhysikalNode node;
 
-  node.pins.push_back(PhysikalConnection{
-      .inpPin = 0,
-      .outPin = 27,
-  });
+  node.connections.push_back(25);
 
-  node.init();
+  node.start();
 
   Serial.println();
   Serial.println();
