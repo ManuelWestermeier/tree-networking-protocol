@@ -269,4 +269,9 @@ struct PhysikalNode
       taskHandle = nullptr;
     }
   }
+
+  void send(Address address, const char *data)
+  {
+    on(Pocket(address, data));
+  }
 };
