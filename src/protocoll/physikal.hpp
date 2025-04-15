@@ -82,7 +82,7 @@ struct PhysikalNode
       Pocket p(address, data);
 
       // Debug prints to verify checksum
-      Serial.print("Received data: ");
+      Serial.println("Received data: ");
       Serial.println(data);
       Serial.print("Computed checksum: ");
       Serial.println(p.checksum);
@@ -96,7 +96,7 @@ struct PhysikalNode
       }
 
       pinMode(pin, OUTPUT);
-      delayMicroseconds(100);
+      delayMicroseconds(1000);
       sendByte(pin, RETURN_OK);
       sendUInt16(pin, p.checksum);
       pinMode(pin, INPUT);
