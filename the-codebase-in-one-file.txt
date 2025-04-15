@@ -1,3 +1,210 @@
+
+//filepath: src\main.cpp
+#include <Arduino.h>
+#include <HardwareSerial.h>
+#include "./protocoll/index.hpp"
+
+#include "./user.hpp"
+
+// Global instance so that the node persists as long as the program runs.
+PhysikalNode node;
+
+void setup()
+{
+  Serial.begin(115200);
+  while (!Serial)
+  {
+  }
+
+  Serial.println();
+  Serial.println();
+  Serial.println();
+  Serial.println();
+  Serial.println(String("Starting... ") + (IS_SENDER ? "SENDER" : "RECEIVER"));
+
+  // Define two addresses.
+  Address u1;
+  u1.push_back(1);
+  u1.push_back(2);
+  u1.push_back(3);
+
+  Address u2;
+  u2.push_back(1);
+  u2.push_back(27);
+
+  // Set up logical node addresses and connections based on whether this node is a sender or receiver.
+#if IS_SENDER
+  node.logicalNode.you = u1;
+  node.logicalNode.connections.push_back({u2, 25});
+#else
+  node.logicalNode.you = u2;
+  node.logicalNode.connections.push_back({u1, 25});
+#endif
+
+  // Start the background task (the physical layer task that handles sending/receiving)
+  node.start();
+
+  // If this is the sender, send a packet after a short delay.
+#if IS_SENDER
+  delay(5000);
+  node.send(u2, "HELLO_____");
+#endif
+}
+
+void loop()
+{
+  // Nothing needed here as the node's task handles everything.
+}
+
+
+//filepath: src\protocoll\index.hpp
+#pragma once
+
+#include "./logical.hpp"
+#include "./physikal.hpp"
+
+//filepath: src\protocoll\logical.hpp
+#pragma once
+
+#include <Arduino.h>
+#include <vector>
+#include <algorithm>
+#include <string.h>
+
+using namespace std;
+
+struct Address : public vector<uint16_t>
+{
+};
+
+struct Match
+{
+  int positive;
+  int negative;
+};
+
+Match match(const Address &a1, const Address &a2)
+{
+  size_t maxLen = max(a1.size(), a2.size());
+  size_t minLen = min(a1.size(), a2.size());
+  Match m = {0, 0};
+
+  while (m.positive < minLen && a1[m.positive] == a2[m.positive])
+  {
+    m.positive++;
+  }
+
+  m.negative = maxLen - 1 - m.positive;
+  return m;
+}
+
+bool eq(const Address &a1, const Address &a2)
+{
+  if (a1.size() != a2.size())
+    return false;
+
+  for (int i = 0; i < a1.size(); i++)
+  {
+    if (a1.at(i) != a2.at(i))
+      return false;
+  }
+
+  return true;
+}
+
+struct Connection
+{
+  Address address;
+  uint8_t pin;
+};
+
+struct Pocket
+{
+  Address address;
+  char data[11];
+  uint16_t checksum;
+
+  Pocket(Address a, const char *d) : address(a)
+  {
+    strncpy(data, d, 10);
+    data[10] = '\0';
+    checksum = calculateChecksum();
+  }
+
+  uint16_t calculateChecksum()
+  {
+    uint16_t sum = 0;
+    for (uint16_t part : address)
+      sum ^= part;
+    for (int i = 0; i < 10; i++)
+      sum ^= data[i];
+    return sum;
+  }
+};
+
+struct Node
+{
+  vector<Connection> connections;
+  Address you;
+
+  uint8_t send(Pocket p)
+  {
+    if (connections.empty())
+    {
+      Serial.println("No available connections to send data.");
+      return 0;
+    }
+
+    Match bestMatch = {0, 0};
+    vector<Connection> sendConnections;
+    Connection sendConnection = connections.at(0);
+
+    for (const auto &connection : connections)
+    {
+      Match currentMatch = match(connection.address, p.address);
+      if (bestMatch.positive <= currentMatch.positive)
+      {
+        if (bestMatch.positive < currentMatch.positive)
+        {
+          sendConnections.clear();
+        }
+        bestMatch = currentMatch;
+        sendConnections.push_back(connection);
+      }
+    }
+
+    bestMatch = match(sendConnection.address, p.address);
+    for (const auto &goodConnection : sendConnections)
+    {
+      Match currentMatch = match(goodConnection.address, p.address);
+      if (currentMatch.negative <= bestMatch.negative)
+      {
+        sendConnection = goodConnection;
+        bestMatch = currentMatch;
+      }
+    }
+
+    Serial.print("Sending data via pin ");
+    Serial.println(sendConnection.pin);
+
+    return sendConnection.pin;
+  }
+
+  uint8_t recieve(Pocket p)
+  {
+    if (eq(you, p.address))
+    {
+      return 0;
+    }
+    else
+    {
+      return send(p);
+    }
+  }
+};
+
+
+//filepath: src\protocoll\physikal.hpp
 #pragma once
 
 #include <Arduino.h>
@@ -306,3 +513,8 @@ struct PhysikalNode
     on(Pocket(address, data));
   }
 };
+
+
+//filepath: src\user.hpp
+#define IS_SENDER 0
+
