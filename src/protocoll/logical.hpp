@@ -55,29 +55,24 @@ struct Connection
 struct Pocket
 {
   Address address;
-  char data[11] = "HELLOWORLD";
+  char data[11];
   uint16_t checksum;
 
-  // FIX: Use ^= to actually update checksum.
-  void computeCheckSum()
+  Pocket(Address a, const char *d) : address(a)
   {
-    checksum = 0;
-    for (const auto &part : address)
-    {
-      checksum ^= part;
-    }
-    for (uint8_t i = 0; i < sizeof(data); i++)
-    {
-      checksum ^= data[i];
-    }
+    strncpy(data, d, 10);
+    data[10] = '\0';
+    checksum = calculateChecksum();
   }
 
-  Pocket(Address a, const char *d)
+  uint16_t calculateChecksum()
   {
-    address = a;
-    strncpy(data, d, 10);
-    data[sizeof(data) - 1] = '\0';
-    computeCheckSum();
+    uint16_t sum = 0;
+    for (uint16_t part : address)
+      sum ^= part;
+    for (int i = 0; i < 10; i++)
+      sum ^= data[i];
+    return sum;
   }
 };
 

@@ -2,7 +2,7 @@
 #include <HardwareSerial.h>
 #include "./protocoll/index.hpp"
 
-#define IS_SENDER 0
+#define IS_SENDER 2
 
 PhysikalNode node;
 

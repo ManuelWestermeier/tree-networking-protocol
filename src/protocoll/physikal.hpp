@@ -1,3 +1,5 @@
+#pragma once
+
 #include <Arduino.h>
 #include <vector>
 #include <freertos/FreeRTOS.h>
@@ -28,11 +30,13 @@ struct PhysikalNode
   TaskHandle_t taskHandle = nullptr;
   vector<PendingPacket> pendingPackets;
 
+  // FreeRTOS task wrapper.
   static void loopTask(void *params)
   {
     static_cast<PhysikalNode *>(params)->loop();
   }
 
+  // Reads one byte from the given pin.
   uint8_t readByte(uint8_t pin)
   {
     uint8_t value = 0;
@@ -44,6 +48,7 @@ struct PhysikalNode
     return value;
   }
 
+  // Reads an unsigned 16-bit integer from the given pin.
   uint16_t readUInt16(uint8_t pin)
   {
     uint8_t low = readByte(pin);
@@ -51,6 +56,7 @@ struct PhysikalNode
     return (high << 8) | low;
   }
 
+  // This function handles the incoming packet.
   void receivePocket(uint8_t pin)
   {
     uint8_t pocketType = readByte(pin);
@@ -74,11 +80,27 @@ struct PhysikalNode
       uint16_t checksum = readUInt16(pin);
 
       Pocket p(address, data);
+
+      // Debug prints to verify checksum
+      Serial.print("Received data: ");
+      Serial.println(data);
+      Serial.print("Computed checksum: ");
+      Serial.println(p.checksum);
+      Serial.print("Received checksum: ");
+      Serial.println(checksum);
+
       if (p.checksum != checksum)
       {
         Serial.println("Checksum mismatch!");
         return;
       }
+
+      pinMode(pin, OUTPUT);
+      delayMicroseconds(100);
+      sendByte(pin, RETURN_OK);
+      sendUInt16(pin, p.checksum);
+      pinMode(pin, INPUT);
+
       on(p);
     }
     else if (pocketType == RETURN_OK)
@@ -88,6 +110,7 @@ struct PhysikalNode
     }
   }
 
+  // Sends a byte bit-by-bit to the provided pin.
   void sendByte(uint8_t pin, uint8_t byte)
   {
     for (int i = 7; i >= 0; i--)
@@ -97,28 +120,27 @@ struct PhysikalNode
     }
   }
 
+  // Sends a 16-bit unsigned integer to the pin.
   void sendUInt16(uint8_t pin, uint16_t val)
   {
     sendByte(pin, val & 0xFF);
     sendByte(pin, val >> 8);
   }
 
+  // Sends a NORMAL_SEND type packet over the given pin.
   void sendNormalPocket(Pocket &p, uint8_t pin)
   {
     pinMode(pin, OUTPUT);
 
     sendByte(pin, NORMAL_SEND);
     sendUInt16(pin, p.address.size());
-
     for (auto a : p.address)
       sendUInt16(pin, a);
-
     for (int i = 0; i < 10; i++)
       sendByte(pin, p.data[i]);
-
     sendUInt16(pin, p.checksum);
 
-    pinMode(pin, INPUT); // switch back to receive mode
+    pinMode(pin, INPUT); // Switch back to receive mode
 
     // Add to pendingPackets if it doesn’t already exist
     bool exists = false;
@@ -136,6 +158,7 @@ struct PhysikalNode
     }
   }
 
+  // Handles a packet once received.
   void on(Pocket p)
   {
     uint8_t sendPin = logicalNode.recieve(p);
@@ -150,6 +173,7 @@ struct PhysikalNode
     }
   }
 
+  // Finds and acknowledges the pending packet based on its checksum.
   void acknowledge(uint16_t hash)
   {
     for (auto it = pendingPackets.begin(); it != pendingPackets.end(); ++it)
@@ -164,6 +188,7 @@ struct PhysikalNode
     }
   }
 
+  // Checks for packets that need to be resent.
   void checkPendingAcks()
   {
     unsigned long currentTime = millis();
@@ -222,9 +247,10 @@ struct PhysikalNode
     }
   }
 
+  // The main loop—pulses the connections and checks for incoming data or ACKs.
   void loop()
   {
-    // Pulse each connection to signal presence.
+    // Pulse each connection to signal presence (adjust as needed)
     for (auto conn : logicalNode.connections)
     {
       pinMode(conn.pin, OUTPUT);
@@ -245,12 +271,12 @@ struct PhysikalNode
         }
       }
       checkPendingAcks();
-
-      // FIX: Yield to other tasks to avoid watchdog resets.
+      // Yield to other tasks to avoid watchdog resets.
       vTaskDelay(1 / portTICK_PERIOD_MS);
     }
   }
 
+  // Starts the FreeRTOS task for handling the physical layer communications.
   void start()
   {
     if (taskHandle == nullptr)
@@ -259,6 +285,7 @@ struct PhysikalNode
     }
   }
 
+  // Stops the FreeRTOS task, if running.
   void stop()
   {
     if (taskHandle != nullptr)
@@ -268,6 +295,7 @@ struct PhysikalNode
     }
   }
 
+  // Initiates the sending of a packet with the given address and data.
   void send(Address address, const char *data)
   {
     on(Pocket(address, data));
