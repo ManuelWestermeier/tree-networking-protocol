@@ -2,6 +2,17 @@
 
 #include "./physikal.hpp"
 
+void sendAck(uint8_t pin, uint32_t checksum)
+{
+    pinMode(pin, OUTPUT);
+    delayMicroseconds(1000);
+    digitalWrite(pin, HIGH);
+    delayMicroseconds(1000);
+    sendByte(pin, RETURN_OK);
+    sendUInt16(pin, checksum);
+    pinMode(pin, INPUT);
+}
+
 void PhysikalNode::receivePocket(uint8_t pin)
 {
     uint8_t pocketType = readByte(pin);
@@ -10,6 +21,7 @@ void PhysikalNode::receivePocket(uint8_t pin)
     {
         uint16_t addrSize = readUInt16(pin);
         Address address;
+        address.reserve(addrSize);
         for (int i = 0; i < addrSize; i++)
         {
             address.push_back(readUInt16(pin));
@@ -26,25 +38,14 @@ void PhysikalNode::receivePocket(uint8_t pin)
 
         Pocket p(address, data);
 
-        // Debug prints to verify checksum
-        Serial.println("Received data: ");
-        Serial.println(data);
-        Serial.print("Computed checksum: ");
-        Serial.println(p.checksum);
-        Serial.print("Received checksum: ");
-        Serial.println(checksum);
-
         if (p.checksum != checksum)
         {
-            Serial.println("Checksum mismatch!");
+            if (onError != nullptr)
+                onError("Checksum mismatch!");
             return;
         }
 
-        pinMode(pin, OUTPUT);
-        delayMicroseconds(1000);
-        sendByte(pin, RETURN_OK);
-        sendUInt16(pin, p.checksum);
-        pinMode(pin, INPUT);
+        sendAck(pin, p.checksum);
 
         on(p);
     }

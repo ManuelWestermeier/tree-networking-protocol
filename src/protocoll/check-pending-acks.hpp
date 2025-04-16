@@ -6,6 +6,7 @@
 void PhysikalNode::checkPendingAcks()
 {
     unsigned long currentTime = millis();
+
     for (auto it = pendingPackets.begin(); it != pendingPackets.end();)
     {
         PendingPacket &pending = *it;
@@ -15,18 +16,25 @@ void PhysikalNode::checkPendingAcks()
             {
                 pending.attempts++;
                 pending.lastSendTime = currentTime;
-                Serial.print("Resending packet ");
-                Serial.print(pending.pocket.checksum, HEX);
-                Serial.print(" attempt ");
-                Serial.println(pending.attempts);
+                if (onError != nullptr)
+                {
+                    onError(String("Checksum mismatch!"));
+                    onError(String("Resending packet "));
+                    onError(String(pending.pocket.checksum, HEX));
+                    onError(String(" attempt "));
+                    onError(String(pending.attempts));
+                }
                 sendNormalPocket(pending.pocket, pending.sendPin);
                 ++it;
             }
             else
             {
-                Serial.print("Packet ");
-                Serial.print(pending.pocket.checksum, HEX);
-                Serial.println(" failed 3 times. Removing connection and retrying on a new pin.");
+                if (onError != nullptr)
+                {
+                    onError(String("Packet "));
+                    onError(String(pending.pocket.checksum, HEX));
+                    onError(String(" failed 3 times. Removing connection and retrying on a new pin."));
+                }
                 uint8_t failedPin = pending.sendPin;
                 // Erase the failed connection using std::find_if.
                 auto connIt = std::find_if(
@@ -42,8 +50,11 @@ void PhysikalNode::checkPendingAcks()
                 if (!logicalNode.connections.empty())
                 {
                     uint8_t newPin = logicalNode.connections.front().pin;
-                    Serial.print("Resending on new connection pin: ");
-                    Serial.println(newPin);
+                    if (onError != nullptr)
+                    {
+                        onError(String("Resending on new connection pin: "));
+                        onError(String(newPin));
+                    }
                     pending.sendPin = newPin;
                     pending.attempts = 1;
                     pending.lastSendTime = currentTime;
@@ -52,7 +63,8 @@ void PhysikalNode::checkPendingAcks()
                 }
                 else
                 {
-                    Serial.println("No available logicalNode.connections to resend packet.");
+                    if (onError != nullptr)
+                        onError(String("No available logicalNode.connections to resend packet."));
                     it = pendingPackets.erase(it);
                 }
             }
