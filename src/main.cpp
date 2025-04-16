@@ -44,33 +44,31 @@ void setup()
 
   node.onError = [](String error)
   {
+    pinMode(2, OUTPUT);
+    digitalWrite(2, HIGH);
     Serial.println("\nError:");
     Serial.println(error);
     Serial.println();
   };
 
 #if USER == 1
-  Serial.println("U1");
   node.logicalNode.you = u1;
   node.logicalNode.connections.push_back({u2, 25});
 #endif
 
 #if USER == 2
-  Serial.println("U2");
   node.logicalNode.you = u2;
   node.logicalNode.connections.push_back({u1, 25});
   node.logicalNode.connections.push_back({u3, 26});
 #endif
 
 #if USER == 3
-  Serial.println("U3");
   node.logicalNode.you = u3;
   node.logicalNode.connections.push_back({u2, 26});
   node.logicalNode.connections.push_back({u4, 25});
 #endif
 
 #if USER == 4
-  Serial.println("U4");
   node.logicalNode.you = u4;
   node.logicalNode.connections.push_back({u3, 25});
 #endif
