@@ -43,7 +43,7 @@ void setup()
   Serial.println("U2");
   node.logicalNode.you = u2;
   node.logicalNode.connections.push_back({u1, 25});
-  node.logicalNode.connections.push_back({u3, 25});
+  node.logicalNode.connections.push_back({u3, 26});
 
   node.start();
 
