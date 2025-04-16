@@ -63,11 +63,6 @@ struct PhysikalNode
 
     if (pocketType == NORMAL_SEND)
     {
-      for (int i = 0; i < 20; i++)
-      {
-        Serial.println(readByte(pin));
-      }
-      return;
       uint16_t addrSize = readUInt16(pin);
       Address address;
       for (int i = 0; i < addrSize; i++)
@@ -123,6 +118,7 @@ struct PhysikalNode
       digitalWrite(pin, (byte >> i) & 1);
       delayMicroseconds(1000);
     }
+    digitalWrite(pin, LOW);
   }
 
   // Sends a 16-bit unsigned integer to the pin.
@@ -136,6 +132,8 @@ struct PhysikalNode
   void sendNormalPocket(Pocket &p, uint8_t pin)
   {
     pinMode(pin, OUTPUT);
+    digitalWrite(pin, HIGH);
+    delayMicroseconds(1000);
 
     sendByte(pin, NORMAL_SEND);
     sendUInt16(pin, p.address.size());
@@ -258,10 +256,10 @@ struct PhysikalNode
     // Pulse each connection to signal presence (adjust as needed)
     for (auto conn : logicalNode.connections)
     {
-      pinMode(conn.pin, OUTPUT);
-      digitalWrite(conn.pin, HIGH);
-      delayMicroseconds(1000);
-      digitalWrite(conn.pin, LOW);
+      // pinMode(conn.pin, OUTPUT);
+      // digitalWrite(conn.pin, HIGH);
+      // delayMicroseconds(1000);
+      // digitalWrite(conn.pin, LOW);
       pinMode(conn.pin, INPUT);
     }
 
@@ -271,7 +269,7 @@ struct PhysikalNode
       {
         if (digitalRead(conn.pin) == HIGH)
         {
-          delayMicroseconds(1000);
+          delayMicroseconds(1500);
           receivePocket(conn.pin);
         }
       }

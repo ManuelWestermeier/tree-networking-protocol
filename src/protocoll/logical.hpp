@@ -37,7 +37,7 @@ bool eq(const Address &a1, const Address &a2)
   if (a1.size() != a2.size())
     return false;
 
-  for (size_t i = 0; i < a1.size(); i++)
+  for (int i = 0; i < a1.size(); i++)
   {
     if (a1.at(i) != a2.at(i))
       return false;

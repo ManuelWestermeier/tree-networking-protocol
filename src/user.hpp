@@ -1,1 +1,1 @@
-#define IS_SENDER 0
+#define IS_SENDER 1
