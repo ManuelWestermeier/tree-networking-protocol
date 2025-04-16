@@ -1,43 +1,37 @@
 #include <Arduino.h>
-#include <HardwareSerial.h>
 #include "./protocoll/index.hpp"
-
 #include "./user.hpp"
 
 PhysikalNode node;
 
+Address u1;
+Address u2;
+Address u3;
+
 void setup()
 {
   Serial.begin(115200);
-  while (!Serial)
-  {
-  }
 
   Serial.println();
-  Serial.println();
-  Serial.println();
-  Serial.println();
-  Serial.println(String("Starting... ") + (IS_SENDER ? "SENDER" : "RECEIVER"));
+  Serial.println("Starting...");
+  Serial.println(String("Role: ") + (IS_SENDER ? "SENDER" : "RECEIVER"));
 
-  node.onData = [](const char *data)
-  {
-    Serial.println();
-    Serial.println("Received To You: ");
-    Serial.println(data);
-    Serial.println();
-  };
-
-  Address u1;
+  // User 1
   u1.push_back(1);
   u1.push_back(2);
   u1.push_back(3);
-
-  Address u2;
+  // User 2
   u2.push_back(1);
   u2.push_back(27);
+  // User 3
+  u3.push_back(0);
 
-  Address u3;
-  u2.push_back(0);
+  node.onData = [](const char *data)
+  {
+    Serial.println("\nReceived:\n");
+    Serial.println(data);
+    Serial.println();
+  };
 
 #if IS_SENDER
   node.logicalNode.you = u1;
@@ -46,11 +40,14 @@ void setup()
   node.logicalNode.you = u2;
   node.logicalNode.connections.push_back({u1, 25});
 #endif
+
   node.start();
+}
+
+void loop()
+{
 #if IS_SENDER
   delay(5000);
   node.send(u2, "HELLO_____");
 #endif
 }
-
-void loop() {}

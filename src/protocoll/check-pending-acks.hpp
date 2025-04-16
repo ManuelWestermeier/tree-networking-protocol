@@ -5,7 +5,7 @@
 void PhysikalNode::checkPendingAcks()
 {
     unsigned long currentTime = millis();
-    // Iterate carefully using an iterator to safely erase elements while looping.
+
     for (auto it = pendingPackets.begin(); it != pendingPackets.end();)
     {
         PendingPacket &pending = *it;
@@ -19,7 +19,6 @@ void PhysikalNode::checkPendingAcks()
                 Serial.print(pending.pocket.checksum, HEX);
                 Serial.print(" attempt ");
                 Serial.println(pending.attempts);
-                // Resend on the same connection
                 sendNormalPocket(pending.pocket, pending.sendPin);
                 ++it;
             }
