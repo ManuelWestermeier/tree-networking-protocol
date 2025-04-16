@@ -56,7 +56,7 @@ struct PhysikalNode
     return (high << 8) | low;
   }
 
-  // This function handles the incoming packet.
+  // Handles the incoming packet.
   void receivePocket(uint8_t pin)
   {
     uint8_t pocketType = readByte(pin);
@@ -145,17 +145,17 @@ struct PhysikalNode
 
     pinMode(pin, INPUT); // Switch back to receive mode
 
-    // Add to pendingPackets if it doesn’t already exist
-    bool exists = false;
+    // Add packet to pendingPackets only if it is not already pending
+    bool alreadyPending = false;
     for (auto &pending : pendingPackets)
     {
       if (pending.pocket.checksum == p.checksum)
       {
-        exists = true;
+        alreadyPending = true;
         break;
       }
     }
-    if (!exists)
+    if (!alreadyPending)
     {
       pendingPackets.push_back(PendingPacket(p, pin, 1, millis()));
     }
@@ -195,9 +195,10 @@ struct PhysikalNode
   void checkPendingAcks()
   {
     unsigned long currentTime = millis();
-    for (size_t i = 0; i < pendingPackets.size();)
+    // Iterate carefully using an iterator to safely erase elements while looping.
+    for (auto it = pendingPackets.begin(); it != pendingPackets.end();)
     {
-      PendingPacket &pending = pendingPackets[i];
+      PendingPacket &pending = *it;
       if (currentTime - pending.lastSendTime > RESEND_TIMEOUT)
       {
         if (pending.attempts < MAX_ATTEMPTS)
@@ -208,8 +209,9 @@ struct PhysikalNode
           Serial.print(pending.pocket.checksum, HEX);
           Serial.print(" attempt ");
           Serial.println(pending.attempts);
+          // Resend on the same connection
           sendNormalPocket(pending.pocket, pending.sendPin);
-          ++i;
+          ++it;
         }
         else
         {
@@ -217,14 +219,17 @@ struct PhysikalNode
           Serial.print(pending.pocket.checksum, HEX);
           Serial.println(" failed 3 times. Removing connection and retrying on a new pin.");
           uint8_t failedPin = pending.sendPin;
-          for (auto it = logicalNode.connections.begin(); it != logicalNode.connections.end(); ++it)
+
+          // Erase the failed connection from the logicalNode
+          for (auto connIt = logicalNode.connections.begin(); connIt != logicalNode.connections.end(); ++connIt)
           {
-            if (it->pin == failedPin)
+            if (connIt->pin == failedPin)
             {
-              logicalNode.connections.erase(it);
+              logicalNode.connections.erase(connIt);
               break;
             }
           }
+          // If an alternative connection exists, update and resend
           if (!logicalNode.connections.empty())
           {
             uint8_t newPin = logicalNode.connections[0].pin;
@@ -234,18 +239,18 @@ struct PhysikalNode
             pending.attempts = 1;
             pending.lastSendTime = currentTime;
             sendNormalPocket(pending.pocket, newPin);
-            ++i;
+            ++it;
           }
           else
           {
             Serial.println("No available logicalNode.connections to resend packet.");
-            pendingPackets.erase(pendingPackets.begin() + i);
+            it = pendingPackets.erase(it);
           }
         }
       }
       else
       {
-        ++i;
+        ++it;
       }
     }
   }
@@ -256,6 +261,7 @@ struct PhysikalNode
     // Pulse each connection to signal presence (adjust as needed)
     for (auto conn : logicalNode.connections)
     {
+      // Uncomment to use pulsing signals if needed:
       // pinMode(conn.pin, OUTPUT);
       // digitalWrite(conn.pin, HIGH);
       // delayMicroseconds(1000);
@@ -275,7 +281,7 @@ struct PhysikalNode
       }
       checkPendingAcks();
       // Yield to other tasks to avoid watchdog resets.
-      vTaskDelay(1 / portTICK_PERIOD_MS);
+      vTaskDelay(pdMS_TO_TICKS(1));
     }
   }
 
