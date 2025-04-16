@@ -63,6 +63,8 @@ struct PhysikalNode
 
   // Checks for packets that need to be resent.
   void checkPendingAcks();
+  void handlePacketRetry(PendingPacket &pending, unsigned long currentTime);
+  void handlePacketFailure(vector<PendingPacket>::iterator &it, unsigned long currentTime);
 
   // The main loop—pulses the connections and checks for incoming data or ACKs.
   void loop()
