@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include "./protocoll/index.hpp"
 
+#include "./user.hpp"
+
 PhysikalNode node;
 
 Address u1;
@@ -8,9 +10,16 @@ Address u2;
 Address u3;
 Address u4;
 
+#define SENDER USER == 1
+
 void setup()
 {
   Serial.begin(115200);
+  Serial.println("User: U" + String(USER));
+  if (SENDER)
+  {
+    Serial.println("Sender");
+  }
 
   // User 1
   u1.push_back(1);
@@ -40,15 +49,38 @@ void setup()
     Serial.println();
   };
 
+#if USER == 1
+  Serial.println("U1");
+  node.logicalNode.you = u1;
+  node.logicalNode.connections.push_back({u2, 25});
+#endif
+
+#if USER == 2
+  Serial.println("U2");
+  node.logicalNode.you = u2;
+  node.logicalNode.connections.push_back({u1, 25});
+  node.logicalNode.connections.push_back({u3, 26});
+#endif
+
+#if USER == 3
+  Serial.println("U3");
+  node.logicalNode.you = u3;
+  node.logicalNode.connections.push_back({u2, 26});
+  node.logicalNode.connections.push_back({u4, 25});
+#endif
+
+#if USER == 4
   Serial.println("U4");
   node.logicalNode.you = u4;
   node.logicalNode.connections.push_back({u3, 25});
-  // node.logicalNode.connections.push_back({u4, 25});
+#endif
 
   node.start();
 
-  // delay(5000);
-  // node.send(u2, "1234567890");
+#if SENDER
+  delay(1000);
+  node.send(u4, "HALLOWELT0");
+#endif
 }
 
 void loop()

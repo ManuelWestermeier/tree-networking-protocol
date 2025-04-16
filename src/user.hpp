@@ -1,1 +1,1 @@
-#define IS_SENDER 1
+#define USER 4
