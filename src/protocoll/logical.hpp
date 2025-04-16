@@ -17,18 +17,18 @@ struct Match
   int negative;
 };
 
-Match match(const Address &a1, const Address &a2)
+Match match(const Address &connection, const Address &pocket)
 {
-  size_t maxLen = max(a1.size(), a2.size());
-  size_t minLen = min(a1.size(), a2.size());
+  size_t maxLen = max(connection.size(), pocket.size());
+  size_t minLen = min(connection.size(), pocket.size());
   Match m = {0, 0};
 
-  while (m.positive < minLen && a1[m.positive] == a2[m.positive])
+  while (m.positive < minLen && connection[m.positive] == pocket[m.positive])
   {
     m.positive++;
   }
 
-  m.negative = maxLen - 1 - m.positive;
+  m.negative = maxLen - m.positive;
   return m;
 }
 
