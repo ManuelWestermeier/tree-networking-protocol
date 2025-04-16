@@ -40,10 +40,10 @@ void setup()
     Serial.println();
   };
 
-  Serial.println("U3");
-  node.logicalNode.you = u3;
-  node.logicalNode.connections.push_back({u2, 26});
-  node.logicalNode.connections.push_back({u4, 25});
+  Serial.println("U4");
+  node.logicalNode.you = u4;
+  node.logicalNode.connections.push_back({u3, 25});
+  // node.logicalNode.connections.push_back({u4, 25});
 
   node.start();
 
