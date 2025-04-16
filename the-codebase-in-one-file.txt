@@ -1,7 +1,72 @@
 
+//filepath: src\basic-main.cpp
+// #include <Arduino.h>
+// #include "./protocoll/index.hpp"
+// #include "./user.hpp"
+
+// PhysikalNode node;
+
+// Address u1;
+// Address u2;
+// Address u3;
+
+// void setup()
+// {
+//     Serial.begin(115200);
+
+//     Serial.println();
+//     Serial.println("Starting...");
+//     Serial.println(String("Role: ") + (IS_SENDER ? "SENDER" : "RECEIVER"));
+
+//     // User 1
+//     u1.push_back(1);
+//     u1.push_back(2);
+//     u1.push_back(3);
+//     // User 2
+//     u2.push_back(1);
+//     u2.push_back(27);
+//     // User 3
+//     u3.push_back(0);
+
+//     node.onData = [](const char *data)
+//     {
+//         Serial.println("\nReceived:");
+//         Serial.println(data);
+//         Serial.println();
+//     };
+
+//     node.onError = [](String error)
+//     {
+//         Serial.println("\nError:");
+//         Serial.println(error);
+//         Serial.println();
+//     };
+
+// #if IS_SENDER
+//     node.logicalNode.you = u1;
+//     node.logicalNode.connections.push_back({u2, 25});
+// #else
+//     node.logicalNode.you = u2;
+//     node.logicalNode.connections.push_back({u1, 25});
+// #endif
+
+//     node.start();
+// }
+
+// void loop()
+// {
+// #if IS_SENDER
+//     delay(5000);
+//     node.send(u2, "HEY  HEY   ");
+//     delay(20000);
+// #endif
+// }
+
+
 //filepath: src\main.cpp
 #include <Arduino.h>
 #include "./protocoll/index.hpp"
+
 #include "./user.hpp"
 
 PhysikalNode node;
@@ -9,49 +74,87 @@ PhysikalNode node;
 Address u1;
 Address u2;
 Address u3;
+Address u4;
+
+#define SENDER USER == 1
 
 void setup()
 {
-  Serial.begin(115200);
+  pinMode(2, OUTPUT);
 
-  Serial.println();
-  Serial.println("Starting...");
-  Serial.println(String("Role: ") + (IS_SENDER ? "SENDER" : "RECEIVER"));
+  Serial.begin(115200);
+  Serial.println("User: U" + String(USER));
+  if (SENDER)
+  {
+    Serial.println("Sender");
+  }
 
   // User 1
   u1.push_back(1);
-  u1.push_back(2);
-  u1.push_back(3);
   // User 2
   u2.push_back(1);
   u2.push_back(27);
   // User 3
-  u3.push_back(0);
+  u3.push_back(1);
+  u3.push_back(27);
+  u3.push_back(3);
+  // User 4
+  u4.push_back(1);
+  u4.push_back(27);
+  u4.push_back(4);
 
   node.onData = [](const char *data)
   {
-    Serial.println("\nReceived:\n");
+    digitalWrite(2, HIGH);
+    Serial.println("\nReceived:");
     Serial.println(data);
     Serial.println();
+    delay(100);
+    digitalWrite(2, LOW);
   };
 
-#if IS_SENDER
+  node.onError = [](String error)
+  {
+    digitalWrite(2, HIGH);
+    Serial.println("\nError:");
+    Serial.println(error);
+    Serial.println();
+    delay(50);
+    digitalWrite(2, LOW);
+  };
+
+#if USER == 1
   node.logicalNode.you = u1;
   node.logicalNode.connections.push_back({u2, 25});
-#else
+#endif
+
+#if USER == 2
   node.logicalNode.you = u2;
   node.logicalNode.connections.push_back({u1, 25});
+  node.logicalNode.connections.push_back({u3, 26});
+#endif
+
+#if USER == 3
+  node.logicalNode.you = u3;
+  node.logicalNode.connections.push_back({u2, 26});
+  node.logicalNode.connections.push_back({u4, 25});
+#endif
+
+#if USER == 4
+  node.logicalNode.you = u4;
+  node.logicalNode.connections.push_back({u3, 25});
 #endif
 
   node.start();
+
+#if SENDER
+  delay(1000);
+  node.send(u4, "HALLOWELT0");
+#endif
 }
 
 void loop()
 {
-#if IS_SENDER
-  delay(5000);
-  node.send(u2, "HELLO_____");
-#endif
 }
 
 
@@ -182,18 +285,18 @@ struct Match
   int negative;
 };
 
-Match match(const Address &a1, const Address &a2)
+Match match(const Address &connection, const Address &pocket)
 {
-  size_t maxLen = max(a1.size(), a2.size());
-  size_t minLen = min(a1.size(), a2.size());
+  size_t maxLen = max(connection.size(), pocket.size());
+  size_t minLen = min(connection.size(), pocket.size());
   Match m = {0, 0};
 
-  while (m.positive < minLen && a1[m.positive] == a2[m.positive])
+  while (m.positive < minLen && connection[m.positive] == pocket[m.positive])
   {
     m.positive++;
   }
 
-  m.negative = maxLen - 1 - m.positive;
+  m.negative = maxLen - m.positive;
   return m;
 }
 
@@ -334,7 +437,7 @@ struct PendingPacket
 #define NORMAL_SEND 1
 #define RETURN_OK 2
 #define RESEND_TIMEOUT 5000 // milliseconds
-#define MAX_ATTEMPTS 3
+#define MAX_ATTEMPTS 50
 
 using std::vector;
 
@@ -582,5 +685,5 @@ void PhysikalNode::sendNormalPocket(Pocket &p, uint8_t pin)
 }
 
 //filepath: src\user.hpp
-#define IS_SENDER 1
+#define USER 1
 

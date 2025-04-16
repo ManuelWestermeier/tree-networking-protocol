@@ -53,6 +53,8 @@ void setup()
     Serial.println("\nError:");
     Serial.println(error);
     Serial.println();
+    delay(50);
+    digitalWrite(2, LOW);
   };
 
 #if USER == 1
