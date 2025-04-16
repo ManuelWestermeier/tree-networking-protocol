@@ -40,14 +40,15 @@ void setup()
     Serial.println();
   };
 
-  Serial.println("U1");
-  node.logicalNode.you = u1;
-  node.logicalNode.connections.push_back({u2, 25});
+  Serial.println("U2");
+  node.logicalNode.you = u2;
+  node.logicalNode.connections.push_back({u1, 25});
+  node.logicalNode.connections.push_back({u3, 25});
 
   node.start();
 
-  delay(5000);
-  node.send(u2, "1234567890");
+  // delay(5000);
+  // node.send(u2, "1234567890");
 }
 
 void loop()
