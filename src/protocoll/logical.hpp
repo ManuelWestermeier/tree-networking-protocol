@@ -52,29 +52,7 @@ struct Connection
   uint8_t pin;
 };
 
-struct Pocket
-{
-  Address address;
-  char data[11];
-  uint16_t checksum;
-
-  Pocket(Address a, const char *d) : address(a)
-  {
-    strncpy(data, d, 10);
-    data[10] = '\0';
-    checksum = calculateChecksum();
-  }
-
-  uint16_t calculateChecksum()
-  {
-    uint16_t sum = 0;
-    for (uint16_t part : address)
-      sum ^= part;
-    for (int i = 0; i < 10; i++)
-      sum ^= data[i];
-    return sum;
-  }
-};
+#include "./pocket.hpp"
 
 struct Node
 {
