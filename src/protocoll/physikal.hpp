@@ -4,6 +4,8 @@
 #include <vector>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <functional>
+
 #include "logical.hpp"
 
 #define NORMAL_SEND 1
@@ -30,136 +32,16 @@ struct PhysikalNode
   TaskHandle_t taskHandle = nullptr;
   vector<PendingPacket> pendingPackets;
 
-  // FreeRTOS task wrapper.
   static void loopTask(void *params)
   {
     static_cast<PhysikalNode *>(params)->loop();
   }
 
-  // Reads one byte from the given pin.
-  uint8_t readByte(uint8_t pin)
-  {
-    uint8_t value = 0;
-    for (int i = 0; i < 8; i++)
-    {
-      value |= (digitalRead(pin) << (7 - i));
-      delayMicroseconds(1000);
-    }
-    return value;
-  }
+  void receivePocket(uint8_t pin);
 
-  // Reads an unsigned 16-bit integer from the given pin.
-  uint16_t readUInt16(uint8_t pin)
-  {
-    uint8_t low = readByte(pin);
-    uint8_t high = readByte(pin);
-    return (high << 8) | low;
-  }
+  void sendNormalPocket(Pocket &p, uint8_t pin);
 
-  // Handles the incoming packet.
-  void receivePocket(uint8_t pin)
-  {
-    uint8_t pocketType = readByte(pin);
-
-    if (pocketType == NORMAL_SEND)
-    {
-      uint16_t addrSize = readUInt16(pin);
-      Address address;
-      for (int i = 0; i < addrSize; i++)
-      {
-        address.push_back(readUInt16(pin));
-      }
-
-      char data[11];
-      for (int i = 0; i < 10; i++)
-      {
-        data[i] = readByte(pin);
-      }
-      data[10] = '\0';
-
-      uint16_t checksum = readUInt16(pin);
-
-      Pocket p(address, data);
-
-      // Debug prints to verify checksum
-      Serial.println("Received data: ");
-      Serial.println(data);
-      Serial.print("Computed checksum: ");
-      Serial.println(p.checksum);
-      Serial.print("Received checksum: ");
-      Serial.println(checksum);
-
-      if (p.checksum != checksum)
-      {
-        Serial.println("Checksum mismatch!");
-        return;
-      }
-
-      pinMode(pin, OUTPUT);
-      delayMicroseconds(1000);
-      sendByte(pin, RETURN_OK);
-      sendUInt16(pin, p.checksum);
-      pinMode(pin, INPUT);
-
-      on(p);
-    }
-    else if (pocketType == RETURN_OK)
-    {
-      uint16_t hash = readUInt16(pin);
-      acknowledge(hash);
-    }
-  }
-
-  // Sends a byte bit-by-bit to the provided pin.
-  void sendByte(uint8_t pin, uint8_t byte)
-  {
-    for (int i = 7; i >= 0; i--)
-    {
-      digitalWrite(pin, (byte >> i) & 1);
-      delayMicroseconds(1000);
-    }
-    digitalWrite(pin, LOW);
-  }
-
-  // Sends a 16-bit unsigned integer to the pin.
-  void sendUInt16(uint8_t pin, uint16_t val)
-  {
-    sendByte(pin, val & 0xFF);
-    sendByte(pin, val >> 8);
-  }
-
-  // Sends a NORMAL_SEND type packet over the given pin.
-  void sendNormalPocket(Pocket &p, uint8_t pin)
-  {
-    pinMode(pin, OUTPUT);
-    digitalWrite(pin, HIGH);
-    delayMicroseconds(1000);
-
-    sendByte(pin, NORMAL_SEND);
-    sendUInt16(pin, p.address.size());
-    for (auto a : p.address)
-      sendUInt16(pin, a);
-    for (int i = 0; i < 10; i++)
-      sendByte(pin, p.data[i]);
-    sendUInt16(pin, p.checksum);
-
-    pinMode(pin, INPUT); // Switch back to receive mode
-
-    // Add packet to pendingPackets only if it is not already pending
-    bool alreadyPending = false;
-    for (auto &pending : pendingPackets)
-    {
-      if (pending.pocket.checksum == p.checksum)
-      {
-        alreadyPending = true;
-        break;
-      }
-    }
-    if (!alreadyPending)
-    {
-      pendingPackets.push_back(PendingPacket(p, pin, 1, millis()));
-    }
-  }
+  std::function<void(const char *data)> onData = nullptr;
 
   // Handles a packet once received.
   void on(Pocket p)
@@ -167,8 +49,7 @@ struct PhysikalNode
     uint8_t sendPin = logicalNode.recieve(p);
     if (sendPin == 0)
     {
-      Serial.print("Received: ");
-      Serial.println(p.data);
+      onData(p.data);
     }
     else
     {
@@ -183,8 +64,6 @@ struct PhysikalNode
     {
       if (it->pocket.checksum == hash)
       {
-        Serial.print("ACK received for packet: ");
-        Serial.println(hash, HEX);
         pendingPackets.erase(it);
         break;
       }
@@ -192,68 +71,7 @@ struct PhysikalNode
   }
 
   // Checks for packets that need to be resent.
-  void checkPendingAcks()
-  {
-    unsigned long currentTime = millis();
-    // Iterate carefully using an iterator to safely erase elements while looping.
-    for (auto it = pendingPackets.begin(); it != pendingPackets.end();)
-    {
-      PendingPacket &pending = *it;
-      if (currentTime - pending.lastSendTime > RESEND_TIMEOUT)
-      {
-        if (pending.attempts < MAX_ATTEMPTS)
-        {
-          pending.attempts++;
-          pending.lastSendTime = currentTime;
-          Serial.print("Resending packet ");
-          Serial.print(pending.pocket.checksum, HEX);
-          Serial.print(" attempt ");
-          Serial.println(pending.attempts);
-          // Resend on the same connection
-          sendNormalPocket(pending.pocket, pending.sendPin);
-          ++it;
-        }
-        else
-        {
-          Serial.print("Packet ");
-          Serial.print(pending.pocket.checksum, HEX);
-          Serial.println(" failed 3 times. Removing connection and retrying on a new pin.");
-          uint8_t failedPin = pending.sendPin;
-
-          // Erase the failed connection from the logicalNode
-          for (auto connIt = logicalNode.connections.begin(); connIt != logicalNode.connections.end(); ++connIt)
-          {
-            if (connIt->pin == failedPin)
-            {
-              logicalNode.connections.erase(connIt);
-              break;
-            }
-          }
-          // If an alternative connection exists, update and resend
-          if (!logicalNode.connections.empty())
-          {
-            uint8_t newPin = logicalNode.connections[0].pin;
-            Serial.print("Resending on new connection pin: ");
-            Serial.println(newPin);
-            pending.sendPin = newPin;
-            pending.attempts = 1;
-            pending.lastSendTime = currentTime;
-            sendNormalPocket(pending.pocket, newPin);
-            ++it;
-          }
-          else
-          {
-            Serial.println("No available logicalNode.connections to resend packet.");
-            it = pendingPackets.erase(it);
-          }
-        }
-      }
-      else
-      {
-        ++it;
-      }
-    }
-  }
+  void checkPendingAcks();
 
   // The main loop—pulses the connections and checks for incoming data or ACKs.
   void loop()
@@ -310,3 +128,8 @@ struct PhysikalNode
     on(Pocket(address, data));
   }
 };
+
+#include "./raw-communication.hpp"
+#include "./check-pending-acks.hpp"
+#include "./receive-pocket.hpp"
+#include "./send-normal-pocket.hpp"

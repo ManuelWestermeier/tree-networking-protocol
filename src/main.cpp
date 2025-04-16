@@ -19,6 +19,14 @@ void setup()
   Serial.println();
   Serial.println(String("Starting... ") + (IS_SENDER ? "SENDER" : "RECEIVER"));
 
+  node.onData = [](const char *data)
+  {
+    Serial.println();
+    Serial.println("Received To You: ");
+    Serial.println(data);
+    Serial.println();
+  };
+
   Address u1;
   u1.push_back(1);
   u1.push_back(2);
@@ -27,6 +35,9 @@ void setup()
   Address u2;
   u2.push_back(1);
   u2.push_back(27);
+
+  Address u3;
+  u2.push_back(0);
 
 #if IS_SENDER
   node.logicalNode.you = u1;
