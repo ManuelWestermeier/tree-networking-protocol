@@ -14,6 +14,8 @@ Address u4;
 
 void setup()
 {
+  pinMode(2, OUTPUT);
+
   Serial.begin(115200);
   Serial.println("User: U" + String(USER));
   if (SENDER)
@@ -37,14 +39,16 @@ void setup()
 
   node.onData = [](const char *data)
   {
+    digitalWrite(2, HIGH);
     Serial.println("\nReceived:");
     Serial.println(data);
     Serial.println();
+    delay(100);
+    digitalWrite(2, LOW);
   };
 
   node.onError = [](String error)
   {
-    pinMode(2, OUTPUT);
     digitalWrite(2, HIGH);
     Serial.println("\nError:");
     Serial.println(error);
