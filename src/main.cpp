@@ -28,8 +28,15 @@ void setup()
 
   node.onData = [](const char *data)
   {
-    Serial.println("\nReceived:\n");
+    Serial.println("\nReceived:");
     Serial.println(data);
+    Serial.println();
+  };
+
+  node.onError = [](String error)
+  {
+    Serial.println("\nError:");
+    Serial.println(error);
     Serial.println();
   };
 
@@ -48,6 +55,7 @@ void loop()
 {
 #if IS_SENDER
   delay(5000);
-  node.send(u2, "HELLO_____");
+  node.send(u2, "HEY  HEY   ");
+  delay(20000);
 #endif
 }
