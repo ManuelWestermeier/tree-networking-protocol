@@ -1,45 +1,39 @@
 
 //filepath: src\main.cpp
 #include <Arduino.h>
-#include <HardwareSerial.h>
 #include "./protocoll/index.hpp"
-
 #include "./user.hpp"
 
 PhysikalNode node;
 
+Address u1;
+Address u2;
+Address u3;
+
 void setup()
 {
   Serial.begin(115200);
-  while (!Serial)
-  {
-  }
 
   Serial.println();
-  Serial.println();
-  Serial.println();
-  Serial.println();
-  Serial.println(String("Starting... ") + (IS_SENDER ? "SENDER" : "RECEIVER"));
+  Serial.println("Starting...");
+  Serial.println(String("Role: ") + (IS_SENDER ? "SENDER" : "RECEIVER"));
 
-  node.onData = [](const char *data)
-  {
-    Serial.println();
-    Serial.println("Received To You: ");
-    Serial.println(data);
-    Serial.println();
-  };
-
-  Address u1;
+  // User 1
   u1.push_back(1);
   u1.push_back(2);
   u1.push_back(3);
-
-  Address u2;
+  // User 2
   u2.push_back(1);
   u2.push_back(27);
+  // User 3
+  u3.push_back(0);
 
-  Address u3;
-  u2.push_back(0);
+  node.onData = [](const char *data)
+  {
+    Serial.println("\nReceived:\n");
+    Serial.println(data);
+    Serial.println();
+  };
 
 #if IS_SENDER
   node.logicalNode.you = u1;
@@ -48,19 +42,26 @@ void setup()
   node.logicalNode.you = u2;
   node.logicalNode.connections.push_back({u1, 25});
 #endif
+
   node.start();
+}
+
+void loop()
+{
 #if IS_SENDER
   delay(5000);
   node.send(u2, "HELLO_____");
 #endif
 }
 
-void loop() {}
 
 //filepath: src\protocoll\check-pending-acks.hpp
 #pragma once
 
 #include "./physikal.hpp"
+#include "./pending-packet.hpp"
+
+#include <algorithm>
 
 void PhysikalNode::checkPendingAcks()
 {
@@ -69,52 +70,17 @@ void PhysikalNode::checkPendingAcks()
     for (auto it = pendingPackets.begin(); it != pendingPackets.end();)
     {
         PendingPacket &pending = *it;
+
         if (currentTime - pending.lastSendTime > RESEND_TIMEOUT)
         {
             if (pending.attempts < MAX_ATTEMPTS)
             {
-                pending.attempts++;
-                pending.lastSendTime = currentTime;
-                Serial.print("Resending packet ");
-                Serial.print(pending.pocket.checksum, HEX);
-                Serial.print(" attempt ");
-                Serial.println(pending.attempts);
-                sendNormalPocket(pending.pocket, pending.sendPin);
+                handlePacketRetry(pending, currentTime);
                 ++it;
             }
             else
             {
-                Serial.print("Packet ");
-                Serial.print(pending.pocket.checksum, HEX);
-                Serial.println(" failed 3 times. Removing connection and retrying on a new pin.");
-                uint8_t failedPin = pending.sendPin;
-
-                // Erase the failed connection from the logicalNode
-                for (auto connIt = logicalNode.connections.begin(); connIt != logicalNode.connections.end(); ++connIt)
-                {
-                    if (connIt->pin == failedPin)
-                    {
-                        logicalNode.connections.erase(connIt);
-                        break;
-                    }
-                }
-                // If an alternative connection exists, update and resend
-                if (!logicalNode.connections.empty())
-                {
-                    uint8_t newPin = logicalNode.connections[0].pin;
-                    Serial.print("Resending on new connection pin: ");
-                    Serial.println(newPin);
-                    pending.sendPin = newPin;
-                    pending.attempts = 1;
-                    pending.lastSendTime = currentTime;
-                    sendNormalPocket(pending.pocket, newPin);
-                    ++it;
-                }
-                else
-                {
-                    Serial.println("No available logicalNode.connections to resend packet.");
-                    it = pendingPackets.erase(it);
-                }
+                handlePacketFailure(it, currentTime);
             }
         }
         else
@@ -123,6 +89,72 @@ void PhysikalNode::checkPendingAcks()
         }
     }
 }
+
+void PhysikalNode::handlePacketRetry(PendingPacket &pending, unsigned long currentTime)
+{
+    pending.attempts++;
+    pending.lastSendTime = currentTime;
+
+    if (onError != nullptr)
+    {
+        onError("Checksum mismatch! Resending packet " +
+                String(pending.pocket.checksum, HEX) +
+                " attempt " + String(pending.attempts));
+    }
+
+    sendNormalPocket(pending.pocket, pending.sendPin);
+}
+
+void PhysikalNode::handlePacketFailure(vector<PendingPacket>::iterator &it, unsigned long currentTime)
+{
+    PendingPacket &pending = *it;
+
+    if (onError != nullptr)
+    {
+        onError("Packet " + String(pending.pocket.checksum, HEX) +
+                " failed 3 times. Removing connection and retrying on a new pin.");
+    }
+
+    uint8_t failedPin = pending.sendPin;
+
+    auto connIt = std::find_if(
+        logicalNode.connections.begin(),
+        logicalNode.connections.end(),
+        [failedPin](const Connection &conn)
+        { return conn.pin == failedPin; });
+
+    if (connIt != logicalNode.connections.end())
+    {
+        logicalNode.connections.erase(connIt);
+    }
+
+    if (!logicalNode.connections.empty())
+    {
+        uint8_t newPin = logicalNode.connections.front().pin;
+
+        if (onError != nullptr)
+        {
+            onError("Resending on new connection pin: " + String(newPin));
+        }
+
+        pending.sendPin = newPin;
+        pending.attempts = 1;
+        pending.lastSendTime = currentTime;
+
+        sendNormalPocket(pending.pocket, newPin);
+        ++it;
+    }
+    else
+    {
+        if (onError != nullptr)
+        {
+            onError("No available logicalNode.connections to resend packet.");
+        }
+
+        it = pendingPackets.erase(it);
+    }
+}
+
 
 //filepath: src\protocoll\index.hpp
 #pragma once
@@ -270,6 +302,23 @@ struct Node
   }
 };
 
+//filepath: src\protocoll\pending-packet.hpp
+#pragma once
+
+#include <Arduino.h>
+#include "./logical.hpp"
+
+struct PendingPacket
+{
+    Pocket pocket;
+    uint8_t sendPin;
+    uint8_t attempts;
+    unsigned long lastSendTime; // in milliseconds
+
+    PendingPacket(const Pocket &p, uint8_t pin, uint8_t att, unsigned long time)
+        : pocket(p), sendPin(pin), attempts(att), lastSendTime(time) {}
+};
+
 //filepath: src\protocoll\physikal.hpp
 #pragma once
 
@@ -280,6 +329,7 @@ struct Node
 #include <functional>
 
 #include "logical.hpp"
+#include "pending-packet.hpp"
 
 #define NORMAL_SEND 1
 #define RETURN_OK 2
@@ -288,22 +338,14 @@ struct Node
 
 using std::vector;
 
-struct PendingPacket
-{
-  Pocket pocket;
-  uint8_t sendPin;
-  uint8_t attempts;
-  unsigned long lastSendTime; // in milliseconds
-
-  PendingPacket(const Pocket &p, uint8_t pin, uint8_t att, unsigned long time)
-      : pocket(p), sendPin(pin), attempts(att), lastSendTime(time) {}
-};
-
 struct PhysikalNode
 {
   Node logicalNode;
   TaskHandle_t taskHandle = nullptr;
   vector<PendingPacket> pendingPackets;
+
+  std::function<void(const char *data)> onData = nullptr;
+  std::function<void(String)> onError = nullptr;
 
   static void loopTask(void *params)
   {
@@ -313,8 +355,6 @@ struct PhysikalNode
   void receivePocket(uint8_t pin);
 
   void sendNormalPocket(Pocket &p, uint8_t pin);
-
-  std::function<void(const char *data)> onData = nullptr;
 
   // Handles a packet once received.
   void on(Pocket p)
@@ -345,18 +385,14 @@ struct PhysikalNode
 
   // Checks for packets that need to be resent.
   void checkPendingAcks();
+  void handlePacketRetry(PendingPacket &pending, unsigned long currentTime);
+  void handlePacketFailure(vector<PendingPacket>::iterator &it, unsigned long currentTime);
 
   // The main loop—pulses the connections and checks for incoming data or ACKs.
   void loop()
   {
-    // Pulse each connection to signal presence (adjust as needed)
     for (auto conn : logicalNode.connections)
     {
-      // Uncomment to use pulsing signals if needed:
-      // pinMode(conn.pin, OUTPUT);
-      // digitalWrite(conn.pin, HIGH);
-      // delayMicroseconds(1000);
-      // digitalWrite(conn.pin, LOW);
       pinMode(conn.pin, INPUT);
     }
 
@@ -367,6 +403,7 @@ struct PhysikalNode
         if (digitalRead(conn.pin) == HIGH)
         {
           delayMicroseconds(1500);
+          // wait on bit + a half (read in the middle of the signal)
           receivePocket(conn.pin);
         }
       }
@@ -452,6 +489,17 @@ void sendUInt16(uint8_t pin, uint16_t val)
 
 #include "./physikal.hpp"
 
+void sendAck(uint8_t pin, uint32_t checksum)
+{
+    pinMode(pin, OUTPUT);
+    delayMicroseconds(1000);
+    digitalWrite(pin, HIGH);
+    delayMicroseconds(1000);
+    sendByte(pin, RETURN_OK);
+    sendUInt16(pin, checksum);
+    pinMode(pin, INPUT);
+}
+
 void PhysikalNode::receivePocket(uint8_t pin)
 {
     uint8_t pocketType = readByte(pin);
@@ -460,6 +508,7 @@ void PhysikalNode::receivePocket(uint8_t pin)
     {
         uint16_t addrSize = readUInt16(pin);
         Address address;
+        address.reserve(addrSize);
         for (int i = 0; i < addrSize; i++)
         {
             address.push_back(readUInt16(pin));
@@ -476,25 +525,14 @@ void PhysikalNode::receivePocket(uint8_t pin)
 
         Pocket p(address, data);
 
-        // Debug prints to verify checksum
-        Serial.println("Received data: ");
-        Serial.println(data);
-        Serial.print("Computed checksum: ");
-        Serial.println(p.checksum);
-        Serial.print("Received checksum: ");
-        Serial.println(checksum);
-
         if (p.checksum != checksum)
         {
-            Serial.println("Checksum mismatch!");
+            if (onError != nullptr)
+                onError("Checksum mismatch!");
             return;
         }
 
-        pinMode(pin, OUTPUT);
-        delayMicroseconds(1000);
-        sendByte(pin, RETURN_OK);
-        sendUInt16(pin, p.checksum);
-        pinMode(pin, INPUT);
+        sendAck(pin, p.checksum);
 
         on(p);
     }
@@ -519,27 +557,28 @@ void PhysikalNode::sendNormalPocket(Pocket &p, uint8_t pin)
     sendByte(pin, NORMAL_SEND);
     sendUInt16(pin, p.address.size());
     for (auto a : p.address)
+    {
         sendUInt16(pin, a);
+    }
     for (int i = 0; i < 10; i++)
+    {
         sendByte(pin, p.data[i]);
+    }
+
     sendUInt16(pin, p.checksum);
 
     pinMode(pin, INPUT); // Switch back to receive mode
 
     // Add packet to pendingPackets only if it is not already pending
-    bool alreadyPending = false;
     for (auto &pending : pendingPackets)
     {
         if (pending.pocket.checksum == p.checksum)
         {
-            alreadyPending = true;
-            break;
+            return;
         }
     }
-    if (!alreadyPending)
-    {
-        pendingPackets.push_back(PendingPacket(p, pin, 1, millis()));
-    }
+
+    pendingPackets.push_back(PendingPacket(p, pin, 1, millis()));
 }
 
 //filepath: src\user.hpp
