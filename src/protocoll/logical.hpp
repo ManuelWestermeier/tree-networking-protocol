@@ -13,8 +13,8 @@ struct Address : public vector<uint16_t>
 
 struct Match
 {
-  int positive;
-  int negative;
+  uint16_t positive;
+  uint16_t negative;
 };
 
 Match match(const Address &connection, const Address &pocket)
@@ -27,7 +27,7 @@ Match match(const Address &connection, const Address &pocket)
     m.positive++;
   }
   m.negative = connection.size() - m.positive;
-  
+
   return m;
 }
 
@@ -36,7 +36,7 @@ bool eq(const Address &a1, const Address &a2)
   if (a1.size() != a2.size())
     return false;
 
-  for (int i = 0; i < a1.size(); i++)
+  for (size_t i = 0; i < a1.size(); i++)
   {
     if (a1.at(i) != a2.at(i))
       return false;
@@ -66,32 +66,21 @@ struct Node
       return 0;
     }
 
-    vector<Connection> sendConnections;
     Connection sendConnection = connections.at(0);
-    Match bestMatch = {0, 0};
+    Match bestMatch = match(sendConnection.address, p.address);
 
-    for (const auto &connection : connections)
+    for (size_t i = 1; i < connections.size(); i++)
     {
-      Match currentMatch = match(connection.address, p.address);
-      if (bestMatch.positive <= currentMatch.positive)
+      Match currentMatch = match(connections[i].address, p.address);
+      if (bestMatch.positive < currentMatch.positive)
       {
-        if (bestMatch.positive < currentMatch.positive)
-        {
-          sendConnections.clear();
-        }
         bestMatch = currentMatch;
-        sendConnections.push_back(connection);
+        sendConnection = connections[i];
       }
-    }
-
-    bestMatch = match(sendConnection.address, p.address);
-    for (const auto &goodConnection : sendConnections)
-    {
-      Match currentMatch = match(goodConnection.address, p.address);
-      if (currentMatch.negative <= bestMatch.negative)
+      else if (bestMatch.positive == currentMatch.positive && bestMatch.negative > currentMatch.negative)
       {
-        sendConnection = goodConnection;
         bestMatch = currentMatch;
+        sendConnection = connections[i];
       }
     }
 
