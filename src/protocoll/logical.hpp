@@ -31,6 +31,11 @@ Match match(const Address &connection, const Address &pocket)
   return m;
 }
 
+int matchIndex(const Match &m)
+{
+  return m.positive - m.negative;
+}
+
 bool eq(const Address &a1, const Address &a2)
 {
   if (a1.size() != a2.size())
@@ -67,20 +72,16 @@ struct Node
     }
 
     Connection sendConnection = connections.at(0);
-    Match bestMatch = match(sendConnection.address, p.address);
+
+    int bestMatchIndex = matchIndex(match(sendConnection.address, p.address));
 
     for (size_t i = 1; i < connections.size(); i++)
     {
-      Match currentMatch = match(connections[i].address, p.address);
-      if (bestMatch.positive < currentMatch.positive)
+      int currentMatchIndex = matchIndex(match(connections[i].address, p.address));
+      if (currentMatchIndex > bestMatchIndex)
       {
-        bestMatch = currentMatch;
         sendConnection = connections[i];
-      }
-      else if (bestMatch.positive == currentMatch.positive && bestMatch.negative > currentMatch.negative)
-      {
-        bestMatch = currentMatch;
-        sendConnection = connections[i];
+        bestMatchIndex = currentMatchIndex;
       }
     }
 
