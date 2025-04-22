@@ -19,7 +19,6 @@ struct Match
 
 Match match(const Address &connection, const Address &pocket)
 {
-  size_t maxLen = max(connection.size(), pocket.size());
   size_t minLen = min(connection.size(), pocket.size());
   Match m = {0, 0};
 
@@ -27,8 +26,8 @@ Match match(const Address &connection, const Address &pocket)
   {
     m.positive++;
   }
-
-  m.negative = maxLen - m.positive;
+  m.negative = connection.size() - m.positive;
+  
   return m;
 }
 
@@ -67,9 +66,9 @@ struct Node
       return 0;
     }
 
-    Match bestMatch = {0, 0};
     vector<Connection> sendConnections;
     Connection sendConnection = connections.at(0);
+    Match bestMatch = {0, 0};
 
     for (const auto &connection : connections)
     {
