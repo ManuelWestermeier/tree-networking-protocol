@@ -39,12 +39,13 @@ void PhysikalNode::receivePocket(uint8_t pin)
 
         Pocket p(address, data);
 
-        Serial.println(String("ERROR=") + data);
-
         if (p.checksum != checksum)
         {
             if (onError != nullptr)
-                onError("Checksum mismatch!");
+            {
+                onError("Checksum mismatch! Data:");
+                onError(data);
+            }
             return;
         }
 
