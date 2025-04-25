@@ -2,14 +2,15 @@
 
 #include "./physikal.hpp"
 
-void sendAck(uint8_t pin, uint32_t checksum)
+void sendAck(uint8_t pin, uint16_t checksum)
 {
     pinMode(pin, OUTPUT);
-    delayMicroseconds(1000);
     digitalWrite(pin, HIGH);
     delayMicroseconds(1000);
+
     sendByte(pin, RETURN_OK);
     sendUInt16(pin, checksum);
+
     pinMode(pin, INPUT);
 }
 
