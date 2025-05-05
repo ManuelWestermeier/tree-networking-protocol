@@ -18,101 +18,97 @@
 class WebInterface
 {
 public:
+    // ctor
     explicit WebInterface(uint16_t port = 80)
-        : serverPort(port), server(port), apSuffix(0) {}
+        : server(port), serverPort(port), apSuffix(0) {}
 
-    // Start LittleFS, load data, and spawn web server task
+    // init FS, WiFi, start server task
     void begin()
     {
-        Serial.println("[WebInterface] Mounting LittleFS...");
+        Serial.println("[Web] begin");
+        Serial.println("[Web] mounting LittleFS...");
         if (!LittleFS.begin())
         {
-            Serial.println("[WebInterface] LittleFS mount failed. Formatting...");
+            Serial.println("[Web] mount failed, formatting...");
             if (!LittleFS.format() || !LittleFS.begin())
             {
-                Serial.println("[WebInterface] LittleFS mount after format failed!");
+                Serial.println("[Web] FS init failed");
                 return;
             }
         }
-        Serial.println("[WebInterface] LittleFS mounted.");
+        Serial.println("[Web] FS ready");
 
         loadAPSuffix();
         loadCredentials();
 
-        Serial.println("[WebInterface] Checking WiFi credentials...");
-        if (!wifiSSID.isEmpty() && !connectWiFi(wifiSSID, wifiPassword))
+        Serial.printf("[Web] creds SSID='%s' passlen=%u\n", wifiSSID.c_str(), wifiPassword.length());
+        bool ok = false;
+        if (!wifiSSID.isEmpty())
         {
-            String fullSSID = String(DEFAULT_AP_SSID) + "_" + String(apSuffix);
-            Serial.printf("[WebInterface] Starting AP mode: %s\n", fullSSID.c_str());
-            WiFi.softAP(fullSSID.c_str());
+            Serial.println("[Web] connect STA");
+            WiFi.mode(WIFI_STA);
+            ok = connectWiFi(wifiSSID, wifiPassword);
+        }
+        if (!ok)
+        {
+            Serial.println("[Web] start AP");
+            WiFi.mode(WIFI_AP_STA);
+            String ss = String(DEFAULT_AP_SSID) + "_" + apSuffix;
+            Serial.printf("[Web] AP SSID=%s\n", ss.c_str());
+            WiFi.softAP(ss.c_str());
         }
 
         loadConnections();
+        Serial.printf("[Web] loaded %u connections\n", (unsigned)connections.size());
 
-        xTaskCreate(
-            webTask,
-            "WebServerTask",
-            8192,
-            this,
-            1,
-            nullptr);
+        Serial.println("[Web] spawning task");
+        xTaskCreatePinnedToCore(
+            webTask, "WebServer", 8192, this, 1, nullptr, 1);
     }
 
-    // Access saved connections
-    const std::vector<Connection> &getConnections() const
-    {
-        return connections;
-    }
+    const std::vector<Connection> &getConnections() const { return connections; }
 
 private:
     WebServer server;
     uint16_t serverPort;
-
-    String wifiSSID;
-    String wifiPassword;
+    String wifiSSID, wifiPassword;
     uint16_t apSuffix;
     std::vector<Connection> connections;
 
-    // Background task: routes + loop
-    static void webTask(void *param)
+    static void webTask(void *p)
     {
-        WebInterface &self = *static_cast<WebInterface *>(param);
-        Serial.println("WT");
-        self.setupRoutes();
-        self.server.begin();
-        Serial.printf("[WebInterface] Web server running on port %u\n", self.serverPort);
+        auto *self = static_cast<WebInterface *>(p);
+        Serial.println("[WebTask] setupRoutes");
+        self->setupRoutes();
+        Serial.println("[WebTask] server.begin");
+        self->server.begin();
+        Serial.printf("[WebTask] running on port %u\n", self->serverPort);
         while (true)
         {
-            self.server.handleClient();
-            vTaskDelay(pdMS_TO_TICKS(1));
+            self->server.handleClient();
+            vTaskDelay(pdMS_TO_TICKS(10));
         }
     }
 
-    // Define URL handlers
     void setupRoutes()
     {
-        server.on("/", HTTP_GET, [&]() { //
-            handleRoot();
-        });
-        server.on("/wifi", HTTP_GET, [&]() { //
-            handleWifi();
-        });
-        server.on("/wifi/connect", HTTP_GET, [&]() { //
-            handleWifiConnect();
-        });
-        server.on("/connections", HTTP_GET, [&]() { //
-            handleConnections();
-        });
-        server.on("/connections/save", HTTP_POST, [&]() { //
-            handleConnectionsSave();
-        });
-        server.onNotFound([&]() { //
-            server.send(404, "text/plain", "Not Found");
-        });
+        server.on("/", HTTP_GET, [&]()
+                  { handleRoot(); });
+        server.on("/wifi", HTTP_GET, [&]()
+                  { handleWifi(); });
+        server.on("/wifi/connect", HTTP_GET, [&]()
+                  { handleWifiConnect(); });
+        server.on("/connections", HTTP_GET, [&]()
+                  { handleConnections(); });
+        server.on("/connections/save", HTTP_POST, [&]()
+                  { handleConnectionsSave(); });
+        server.onNotFound([&]()
+                          { server.send(404, "text/plain", "Not Found"); });
     }
 
     void handleRoot()
     {
+        Serial.println("[Web] handleRoot");
         if (WiFi.status() == WL_CONNECTED)
         {
             server.sendHeader("Location", "/connections");
@@ -127,44 +123,30 @@ private:
 
     void handleWifi()
     {
-        int n = WiFi.scanNetworks(true);
-        String options;
+        Serial.println("[Web] handleWifi: scan");
+        int n = WiFi.scanNetworks();
+        String opts;
         for (int i = 0; i < n; ++i)
         {
-            options += "<option value='" + WiFi.SSID(i) + "'>" + WiFi.SSID(i) + "</option>";
+            opts += "<option value='" + WiFi.SSID(i) + "'>" + WiFi.SSID(i) + "</option>";
         }
-        static const char *page = R"RAW(
+        String page = R"RAW(
 <!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">  
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"> 
-<title>Wi-Fi Setup</title>
-</head>
-<body class="p-4">
-  <div class="container">
-    <h2>Wi-Fi Setup</h2>
-    <form action="/wifi/connect" method="get">
-      <div class="mb-3">
-        <label class="form-label">SSID</label>
-        <select name="ssid" class="form-select">%OPTIONS%</select>
-      </div>
-      <div class="mb-3">
-        <label class="form-label">Password</label>
-        <input type="password" name="pass" class="form-control" required>
-      </div>
-      <button type="submit" class="btn btn-primary">Connect</button>
-    </form>
-  </div>
-</body>
-</html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<title>Wi-Fi</title></head><body class="p-4"><div class="container">
+<h2>Wi-Fi Setup</h2><form action="/wifi/connect" method="get">
+<div class="mb-3"><label>SSID</label><select name="ssid" class="form-select">%OPTIONS%</select></div>
+<div class="mb-3"><label>Password</label><input type="password" name="pass" class="form-control" required></div>
+<button type="submit" class="btn btn-primary">Connect</button></form></div></body></html>
 )RAW";
-        String html = String(page);
-        html.replace("%OPTIONS%", options);
-        server.send(200, "text/html", html);
+        page.replace("%OPTIONS%", opts);
+        server.send(200, "text/html", page);
     }
 
     void handleWifiConnect()
     {
+        Serial.println("[Web] handleWifiConnect");
         String ssid = server.arg("ssid");
         String pass = server.arg("pass");
         if (connectWiFi(ssid, pass))
@@ -183,77 +165,54 @@ private:
 
     void handleConnections()
     {
-        int n = WiFi.scanNetworks(true);
-        String netList = "<ul class='list-group mb-3'>";
+        Serial.println("[Web] handleConnections: scan");
+        int n = WiFi.scanNetworks();
+        String list = "<ul class='list-group mb-3'>";
         for (int i = 0; i < n; ++i)
-            netList += "<li class='list-group-item'>" + WiFi.SSID(i) + "</li>";
-        netList += "</ul>";
+            list += "<li class='list-group-item'>" + WiFi.SSID(i) + "</li>";
+        list += "</ul>";
 
         String rows;
         for (auto &c : connections)
         {
-            String addr;
+            String a;
             for (size_t i = 0; i < c.address.size(); ++i)
             {
-                addr += String(c.address[i]);
+                a += String(c.address[i]);
                 if (i + 1 < c.address.size())
-                    addr += ",";
+                    a += ",";
             }
-            rows += "<tr><td><input name='address[]' value='" + addr + "' class='form-control' required></td>";
-            rows += "<td><input type='number' name='pin[]' value='" + String(c.pin) + "' class='form-control' required></td>";
-            rows += "<td><button type='button' class='btn btn-danger' onclick='removeRow(this)'>X</button></td></tr>";
+            rows += "<tr><td><input name='address[]' value='" + a + "' class='form-control'></td>";
+            rows += "<td><input type='number' name='pin[]' value='" + String(c.pin) + "' class='form-control'></td>";
+            rows += "<td><button onclick='removeRow(this)' class='btn btn-danger'>X</button></td></tr>";
         }
-
-        static const char *page2 = R"RAW(
+        String page2 = R"RAW(
 <!DOCTYPE html>
-<html>
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">  
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet"> 
-<title>Connection Manager</title>
-</head>
-<body class="p-4">
-  <div class="container">
-    <h2>Available Wi-Fi Networks</h2>
-    %NETLIST%
-    <h2>Connections</h2>
-    <form action="/connections/save" method="post">
-      <table class="table">
-        <thead><tr><th>Address</th><th>Pin</th><th></th></tr></thead>
-        <tbody>%ROWS%</tbody>
-      </table>
-      <button type="button" class="btn btn-secondary mb-3" onclick="addRow()">Add</button>
-      <button type="submit" class="btn btn-primary">Save</button>
-    </form>
-  </div>
-  <script>
-    function addRow() {
-      const tbl = document.querySelector('tbody');
-      const row = document.createElement('tr');
-      row.innerHTML = `<td><input name='address[]' class='form-control' required></td>` +
-                      `<td><input type='number' name='pin[]' class='form-control' required></td>` +
-                      `<td><button type='button' class='btn btn-danger' onclick='removeRow(this)'>X</button></td>`;
-      tbl.appendChild(row);
-    }
-    function removeRow(btn) { btn.closest('tr').remove(); }
-  </script>
-</body>
-</html>
+<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<title>Connections</title></head><body class="p-4"><div class="container">
+<h2>Networks</h2>%NET%
+<h2>Connections</h2><form action="/connections/save" method="post">
+<table class="table"><thead><tr><th>Address</th><th>Pin</th><th></th></tr></thead><tbody>%ROWS%</tbody></table>
+<button type="button" onclick="addRow()" class="btn btn-secondary mb-3">Add</button>
+<button type="submit" class="btn btn-primary">Save</button></form></div>
+<script>function addRow(){let t=document.querySelector('tbody');let r=document.createElement('tr');r.innerHTML="<td><input name='address[]' class='form-control'></td><td><input type='number' name='pin[]' class='form-control'></td><td><button onclick='removeRow(this)' class='btn btn-danger'>X</button></td>";t.appendChild(r);}function removeRow(b){b.closest('tr').remove();}</script>
+</body></html>
 )RAW";
-        String html2 = String(page2);
-        html2.replace("%NETLIST%", netList);
-        html2.replace("%ROWS%", rows);
-        server.send(200, "text/html", html2);
+        page2.replace("%NET%", list);
+        page2.replace("%ROWS%", rows);
+        server.send(200, "text/html", page2);
     }
 
     void handleConnectionsSave()
     {
+        Serial.println("[Web] handleConnectionsSave");
         std::vector<String> addrs, pins;
         for (int i = 0; i < server.args(); ++i)
         {
-            String name = server.argName(i);
-            if (name == "address[]")
+            if (server.argName(i) == "address[]")
                 addrs.push_back(server.arg(i));
-            else if (name == "pin[]")
+            if (server.argName(i) == "pin[]")
                 pins.push_back(server.arg(i));
         }
         connections.clear();
@@ -268,7 +227,7 @@ private:
                 if (ss.peek() == ',')
                     ss.ignore();
             }
-            c.pin = static_cast<uint8_t>(pins[i].toInt());
+            c.pin = uint8_t(pins[i].toInt());
             connections.push_back(c);
         }
         saveConnections();
@@ -276,159 +235,142 @@ private:
         server.send(302, "text/plain", "");
     }
 
-    bool connectWiFi(const String &ssid, const String &password)
+    bool connectWiFi(const String &ssid, const String &pwd)
     {
-        WiFi.begin(ssid.c_str(), password.c_str());
-        uint32_t start = millis();
-        while (WiFi.status() != WL_CONNECTED && millis() - start < WIFI_CONNECT_TIMEOUT_MS)
-        {
+        Serial.printf("[Web] connectWiFi '%s'\n", ssid.c_str());
+        WiFi.begin(ssid.c_str(), pwd.c_str());
+        uint32_t t = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - t < WIFI_CONNECT_TIMEOUT_MS)
             delay(500);
-        }
         if (WiFi.status() == WL_CONNECTED)
         {
-            Serial.printf("[WebInterface] Connected to %s\n", ssid.c_str());
+            Serial.println("[Web] WiFi connected");
             return true;
         }
-        Serial.printf("[WebInterface] Failed to connect to %s\n", ssid.c_str());
+        Serial.println("[Web] WiFi failed");
         return false;
     }
 
     void loadAPSuffix()
     {
+        Serial.println("[Web] loadAPSuffix");
         if (!LittleFS.exists(AP_SUFFIX_FILE))
         {
             apSuffix = esp_random() & 0xFFFF;
             File f = LittleFS.open(AP_SUFFIX_FILE, "w");
-            if (!f)
+            if (f)
             {
-                Serial.println("[WebInterface] Failed to create AP suffix file.");
-                return;
+                f.println(apSuffix);
+                f.close();
+                Serial.printf("[Web] new suffix=%u\n", apSuffix);
             }
-            f.println(apSuffix);
-            f.close();
         }
         else
         {
             File f = LittleFS.open(AP_SUFFIX_FILE, "r");
-            if (!f)
+            if (f)
             {
-                Serial.println("[WebInterface] Failed to open AP suffix file for reading.");
-                return;
+                apSuffix = f.readStringUntil('\n').toInt();
+                f.close();
+                Serial.printf("[Web] loaded suffix=%u\n", apSuffix);
             }
-            String s = f.readStringUntil('\n');
-            s.trim();
-            apSuffix = s.toInt();
-            f.close();
         }
     }
 
     void loadCredentials()
     {
+        Serial.println("[Web] loadCredentials");
         if (!LittleFS.exists(WIFI_CRED_FILE))
         {
-            Serial.println("[WebInterface] No WiFi credential file found. Creating new one.");
             File f = LittleFS.open(WIFI_CRED_FILE, "w");
             if (f)
                 f.close();
             return;
         }
         File f = LittleFS.open(WIFI_CRED_FILE, "r");
-        if (!f)
+        if (f)
         {
-            Serial.println("[WebInterface] Failed to open WiFi credential file for reading.");
-            return;
+            wifiSSID = f.readStringUntil('\n');
+            wifiSSID.trim();
+            wifiPassword = f.readStringUntil('\n');
+            wifiPassword.trim();
+            f.close();
+            Serial.printf("[Web] creds loaded SSID='%s'\n", wifiSSID.c_str());
         }
-        wifiSSID = f.readStringUntil('\n');
-        wifiSSID.trim();
-        wifiPassword = f.readStringUntil('\n');
-        wifiPassword.trim();
-        f.close();
     }
 
     void saveCredentials()
     {
+        Serial.println("[Web] saveCredentials");
         File f = LittleFS.open(WIFI_CRED_FILE, "w");
-        if (!f)
+        if (f)
         {
-            Serial.println("[WebInterface] Failed to open WiFi credential file for writing.");
-            return;
+            f.println(wifiSSID);
+            f.println(wifiPassword);
+            f.close();
+            Serial.println("[Web] creds saved");
         }
-        f.println(wifiSSID);
-        f.println(wifiPassword);
-        f.close();
-        Serial.println("[WebInterface] WiFi credentials saved.");
     }
 
     void loadConnections()
     {
+        Serial.println("[Web] loadConnections");
         connections.clear();
         if (!LittleFS.exists(CONN_FILE))
         {
-            Serial.println("[WebInterface] No connections file found. Creating empty one.");
             File f = LittleFS.open(CONN_FILE, "w");
-            if (!f)
-                Serial.println("[WebInterface] Failed to create connections file.");
-            else
+            if (f)
                 f.close();
             return;
         }
         File f = LittleFS.open(CONN_FILE, "r");
-        if (!f)
+        if (f)
         {
-            Serial.println("[WebInterface] Failed to open connections file for reading. Recreating.");
-            LittleFS.remove(CONN_FILE);
-            File f2 = LittleFS.open(CONN_FILE, "w");
-            if (!f2)
-                Serial.println("[WebInterface] Failed to recreate connections file.");
-            else
-                f2.close();
-            return;
-        }
-        while (f.available())
-        {
-            String line = f.readStringUntil('\n');
-            if (line.isEmpty())
-                continue;
-            int sep = line.indexOf(':');
-            if (sep < 0)
-                continue;
-            String addrStr = line.substring(0, sep);
-            String pinStr = line.substring(sep + 1);
-            Connection c;
-            std::istringstream ss(addrStr.c_str());
-            uint16_t v;
-            while (ss >> v)
+            while (f.available())
             {
-                c.address.push_back(v);
-                if (ss.peek() == ',')
-                    ss.ignore();
+                String ln = f.readStringUntil('\n');
+                if (ln.isEmpty())
+                    continue;
+                int p = ln.indexOf(':');
+                if (p < 0)
+                    continue;
+                String as = ln.substring(0, p), ps = ln.substring(p + 1);
+                Connection c;
+                std::istringstream ss(as.c_str());
+                uint16_t v;
+                while (ss >> v)
+                {
+                    c.address.push_back(v);
+                    if (ss.peek() == ',')
+                        ss.ignore();
+                }
+                c.pin = uint8_t(ps.toInt());
+                connections.push_back(c);
             }
-            c.pin = static_cast<uint8_t>(pinStr.toInt());
-            connections.push_back(c);
+            f.close();
         }
-        f.close();
+        Serial.printf("[Web] %u connections loaded\n", (unsigned)connections.size());
     }
 
     void saveConnections()
     {
+        Serial.println("[Web] saveConnections");
         File f = LittleFS.open(CONN_FILE, "w");
-        if (!f)
+        if (f)
         {
-            Serial.println("[WebInterface] Failed to open connections file for writing.");
-            return;
-        }
-        for (const auto &c : connections)
-        {
-            for (size_t i = 0; i < c.address.size(); ++i)
+            for (auto &c : connections)
             {
-                f.print(c.address[i]);
-                if (i + 1 < c.address.size())
-                    f.print(',');
+                for (size_t i = 0; i < c.address.size(); ++i)
+                {
+                    f.print(c.address[i]);
+                    if (i + 1 < c.address.size())
+                        f.print(',');
+                }
+                f.print(':');
+                f.println(c.pin);
             }
-            f.print(':');
-            f.println(c.pin);
+            f.close();
+            Serial.println("[Web] connections saved");
         }
-        f.close();
-        Serial.println("[WebInterface] Connections saved.");
     }
 };
