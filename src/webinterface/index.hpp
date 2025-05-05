@@ -18,11 +18,9 @@
 class WebInterface
 {
 public:
-    // ctor
     explicit WebInterface(uint16_t port = 80)
         : server(port), serverPort(port), apSuffix(0) {}
 
-    // init FS, WiFi, start server task
     void begin()
     {
         Serial.println("[Web] begin");
@@ -106,6 +104,16 @@ private:
                           { server.send(404, "text/plain", "Not Found"); });
     }
 
+    // Helper to build server URL
+    String getServerURL()
+    {
+        IPAddress ip = WiFi.localIP();
+        String addr = ip.toString();
+        if (serverPort != 80)
+            addr += ":" + String(serverPort);
+        return String("http://") + addr;
+    }
+
     void handleRoot()
     {
         Serial.println("[Web] handleRoot");
@@ -130,17 +138,45 @@ private:
         {
             opts += "<option value='" + WiFi.SSID(i) + "'>" + WiFi.SSID(i) + "</option>";
         }
-        String page = R"RAW(
+        String page = R"rawl(
 <!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-<title>Wi-Fi</title></head><body class="p-4"><div class="container">
-<h2>Wi-Fi Setup</h2><form action="/wifi/connect" method="get">
-<div class="mb-3"><label>SSID</label><select name="ssid" class="form-select">%OPTIONS%</select></div>
-<div class="mb-3"><label>Password</label><input type="password" name="pass" class="form-control" required></div>
-<button type="submit" class="btn btn-primary">Connect</button></form></div></body></html>
-)RAW";
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <title>Wi-Fi Setup</title>
+</head>
+<body class="bg-light">
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="#">Node Web UI</a>
+    <span class="navbar-text ms-auto">%SERVER_URL%</span>
+  </div>
+</nav>
+<div class="container py-4">
+  <div class="card shadow-sm">
+    <div class="card-body">
+      <h2 class="card-title mb-4">Connect to Wi-Fi</h2>
+      <form action="/wifi/connect" method="get">
+        <div class="mb-3">
+          <label class="form-label">SSID</label>
+          <select name="ssid" class="form-select">%OPTIONS%</select>
+        </div>
+        <div class="mb-3">
+          <label class="form-label">Password</label>
+          <input type="password" name="pass" class="form-control" required>
+        </div>
+        <button type="submit" class="btn btn-success">Connect</button>
+      </form>
+    </div>
+  </div>
+</div>
+</body>
+</html>
+)rawl";
         page.replace("%OPTIONS%", opts);
+        page.replace("%SERVER_URL%", getServerURL());
         server.send(200, "text/html", page);
     }
 
@@ -159,7 +195,17 @@ private:
         }
         else
         {
-            server.send(200, "text/html", "<p>Connection failed. <a href='/wifi'>Try again</a></p>");
+            server.send(200, "text/html", R"rawf(
+<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<title>Connection Failed</title></head>
+<body class="bg-light p-4">
+<div class="alert alert-danger">Failed to connect to Wi-Fi. <a href="/wifi" class="alert-link">Try again</a>.</div>
+</body>
+</html>
+)rawf");
         }
     }
 
@@ -169,7 +215,9 @@ private:
         int n = WiFi.scanNetworks();
         String list = "<ul class='list-group mb-3'>";
         for (int i = 0; i < n; ++i)
+        {
             list += "<li class='list-group-item'>" + WiFi.SSID(i) + "</li>";
+        }
         list += "</ul>";
 
         String rows;
@@ -184,23 +232,69 @@ private:
             }
             rows += "<tr><td><input name='address[]' value='" + a + "' class='form-control'></td>";
             rows += "<td><input type='number' name='pin[]' value='" + String(c.pin) + "' class='form-control'></td>";
-            rows += "<td><button onclick='removeRow(this)' class='btn btn-danger'>X</button></td></tr>";
+            rows += "<td><button onclick='removeRow(this)' class='btn btn-outline-danger'>Remove</button></td></tr>";
         }
-        String page2 = R"RAW(
+
+        String page2 = R"rawc(
 <!DOCTYPE html>
-<html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-<title>Connections</title></head><body class="p-4"><div class="container">
-<h2>Networks</h2>%NET%
-<h2>Connections</h2><form action="/connections/save" method="post">
-<table class="table"><thead><tr><th>Address</th><th>Pin</th><th></th></tr></thead><tbody>%ROWS%</tbody></table>
-<button type="button" onclick="addRow()" class="btn btn-secondary mb-3">Add</button>
-<button type="submit" class="btn btn-primary">Save</button></form></div>
-<script>function addRow(){let t=document.querySelector('tbody');let r=document.createElement('tr');r.innerHTML="<td><input name='address[]' class='form-control'></td><td><input type='number' name='pin[]' class='form-control'></td><td><button onclick='removeRow(this)' class='btn btn-danger'>X</button></td>";t.appendChild(r);}function removeRow(b){b.closest('tr').remove();}</script>
-</body></html>
-)RAW";
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <title>Connections</title>
+</head>
+<body class="bg-light">
+<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+  <div class="container-fluid">
+    <a class="navbar-brand" href="#">Node Web UI</a>
+    <span class="navbar-text ms-auto">%SERVER_URL%</span>
+  </div>
+</nav>
+<div class="container py-4">
+  <div class="row mb-4">
+    <div class="col-md-6">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h3 class="card-title">Available Wi-Fi Networks</h3>
+          %NET%
+        </div>
+      </div>
+    </div>
+    <div class="col-md-6">
+      <div class="card shadow-sm">
+        <div class="card-body">
+          <h3 class="card-title">Sensor Connections</h3>
+          <form action="/connections/save" method="post">
+            <table class="table">
+              <thead class="table-light"><tr><th>Address</th><th>Pin</th><th></th></tr></thead>
+              <tbody>%ROWS%</tbody>
+            </table>
+            <button type="button" onclick="addRow()" class="btn btn-outline-secondary mb-3">Add Row</button>
+            <button type="submit" class="btn btn-success">Save Changes</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+  function addRow() {
+    let t = document.querySelector('tbody');
+    let r = document.createElement('tr');
+    r.innerHTML = "<td><input name='address[]' class='form-control'></td><td><input type='number' name='pin[]' class='form-control'></td><td><button onclick='removeRow(this)' class='btn btn-outline-danger'>Remove</button></td>";
+    t.appendChild(r);
+  }
+  function removeRow(b) {
+    b.closest('tr').remove();
+  }
+</script>
+</body>
+</html>
+)rawc";
         page2.replace("%NET%", list);
         page2.replace("%ROWS%", rows);
+        page2.replace("%SERVER_URL%", getServerURL());
         server.send(200, "text/html", page2);
     }
 
