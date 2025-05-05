@@ -2,14 +2,15 @@
 
 #include "webinterface/index.hpp"
 
-WebInterface webif;
+WebInterface web(80);
 
 void setup()
 {
   Serial.begin(115200);
-  webif.begin();
+  web.begin();
 }
 
 void loop()
 {
+  vTaskDelay(pdMS_TO_TICKS(1000));
 }
