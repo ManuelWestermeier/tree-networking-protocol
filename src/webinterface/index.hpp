@@ -68,9 +68,10 @@ WebInterface::WebInterface(uint16_t port)
 
 void WebInterface::begin()
 {
-    if (!LittleFS.begin())
+    if (!LittleFS.begin(true))
     {
-        Serial.println("Failed to mount LittleFS");
+        Serial.println("LittleFS Mount Failed");
+        return;
     }
 
     // Load or generate persistent AP suffix
@@ -102,7 +103,7 @@ void WebInterface::loadAPSuffix()
 {
     if (LittleFS.exists(AP_SUFFIX_FILE))
     {
-        File f = LittleFS.open(AP_SUFFIX_FILE, "r");
+        File f = LittleFS.open(AP_SUFFIX_FILE, "r+");
         apSuffix = f.readStringUntil('\n').toInt();
         f.close();
     }
@@ -110,7 +111,7 @@ void WebInterface::loadAPSuffix()
     {
         // Generate a random 16-bit suffix
         apSuffix = esp_random() & 0xFFFF;
-        File f = LittleFS.open(AP_SUFFIX_FILE, "w");
+        File f = LittleFS.open(AP_SUFFIX_FILE, "w+");
         if (f)
         {
             f.println(apSuffix);
@@ -122,6 +123,17 @@ void WebInterface::loadAPSuffix()
 void WebInterface::webTask(void *param)
 {
     WebInterface *self = static_cast<WebInterface *>(param);
+
+    self->loadCredentials();
+    if (!self->wifiSSID.isEmpty() && !self->connectWiFi(self->wifiSSID, self->wifiPassword))
+    {
+        String fullSSID = String(DEFAULT_AP_SSID) + "_" + String(self->apSuffix);
+        Serial.printf("Starting AP mode: %s\n", fullSSID.c_str());
+        WiFi.softAP(fullSSID.c_str());
+    }
+
+    self->loadConnections();
+
     self->setupRoutes();
     self->server.begin();
     Serial.printf("Web server running on port %u\n", self->serverPort);
@@ -354,17 +366,23 @@ bool WebInterface::connectWiFi(const String &ssid, const String &password)
 
 void WebInterface::loadCredentials()
 {
-    if (!LittleFS.exists(WIFI_CRED_FILE))
-        return;
-    File f = LittleFS.open(WIFI_CRED_FILE, "r");
-    wifiSSID = f.readStringUntil('\n');
-    wifiPassword = f.readStringUntil('\n');
-    f.close();
+    if (LittleFS.exists(WIFI_CRED_FILE))
+    {
+        File f = LittleFS.open(WIFI_CRED_FILE, "r+");
+        wifiSSID = f.readStringUntil('\n');
+        wifiPassword = f.readStringUntil('\n');
+        f.close();
+    }
+    else
+    {
+        File f = LittleFS.open(WIFI_CRED_FILE, "w+");
+        f.close(); // Datei nur erzeugen
+    }
 }
 
 void WebInterface::saveCredentials()
 {
-    File f = LittleFS.open(WIFI_CRED_FILE, "w");
+    File f = LittleFS.open(WIFI_CRED_FILE, "w+");
     f.println(wifiSSID);
     f.println(wifiPassword);
     f.close();
@@ -375,7 +393,7 @@ void WebInterface::loadConnections()
     connections.clear();
     if (!LittleFS.exists(CONN_FILE))
         return;
-    File f = LittleFS.open(CONN_FILE, "r");
+    File f = LittleFS.open(CONN_FILE, "r+");
     while (f.available())
     {
         String line = f.readStringUntil('\n');
@@ -401,7 +419,7 @@ void WebInterface::loadConnections()
 
 void WebInterface::saveConnections()
 {
-    File f = LittleFS.open(CONN_FILE, "w");
+    File f = LittleFS.open(CONN_FILE, "w+");
     for (auto &c : connections)
     {
         for (size_t i = 0; i < c.address.size(); ++i)
