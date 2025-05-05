@@ -57,21 +57,20 @@ public:
         }
 
         loadConnections();
-        Serial.printf("[Web] loaded %u connections\n", (unsigned)connections.size());
+        Serial.printf("[Web] loaded %u physikalNode.logicalNode.connections\n", physikalNode.logicalNode.connections.size());
 
         Serial.println("[Web] spawning task");
         xTaskCreatePinnedToCore(
             webTask, "WebServer", 8192, this, 1, nullptr, 1);
     }
 
-    const std::vector<Connection> &getConnections() const { return connections; }
-
 private:
     WebServer server;
     uint16_t serverPort;
     String wifiSSID, wifiPassword;
     uint16_t apSuffix;
-    std::vector<Connection> connections;
+    // std::vector<Connection> physikalNode.logicalNode.connections;
+    PhysikalNode physikalNode;
 
     static void webTask(void *p)
     {
@@ -236,7 +235,7 @@ private:
     {
         Serial.println("[Web] handleConnections: scan");
         String rows;
-        for (auto &c : connections)
+        for (auto &c : physikalNode.logicalNode.connections)
         {
             String a;
             for (size_t i = 0; i < c.address.size(); ++i)
@@ -277,7 +276,7 @@ private:
   </div>
 </nav>
 <div class="container py-4">
-    <h3 class="card-title">Sensor Connections</h3>
+    <h3 class="card-title">Sensor physikalNode.logicalNode.connections</h3>
     <form action="/connections/save" method="post">
     <table class="table">
         <thead class="table-light"><tr><th>Address</th><th>Pin</th><th></th></tr></thead>
@@ -314,10 +313,23 @@ private:
         {
             if (server.argName(i) == "address[]")
                 addrs.push_back(server.arg(i));
-            if (server.argName(i) == "pin[]")
+            else if (server.argName(i) == "pin[]")
                 pins.push_back(server.arg(i));
+            else if (server.argName(i) == "onwAddr")
+            {
+                Address addr;
+                std::istringstream ss(addrs[i].c_str());
+                uint16_t v;
+                while (ss >> v)
+                {
+                    addr.push_back(v);
+                    if (ss.peek() == ',')
+                        ss.ignore();
+                }
+                physikalNode.logicalNode.you = addr;
+            }
         }
-        connections.clear();
+        physikalNode.logicalNode.connections.clear();
         for (size_t i = 0; i < addrs.size() && i < pins.size(); ++i)
         {
             Connection c;
@@ -330,7 +342,7 @@ private:
                     ss.ignore();
             }
             c.pin = uint8_t(pins[i].toInt());
-            connections.push_back(c);
+            physikalNode.logicalNode.connections.push_back(c);
         }
         saveConnections();
         server.sendHeader("Location", "/connections");
@@ -416,8 +428,9 @@ private:
 
     void loadConnections()
     {
+        // onwAddr physikalNode.logicalNode.you
         Serial.println("[Web] loadConnections");
-        connections.clear();
+        physikalNode.logicalNode.connections.clear();
         if (!LittleFS.exists(CONN_FILE))
         {
             File f = LittleFS.open(CONN_FILE, "w");
@@ -428,6 +441,7 @@ private:
         File f = LittleFS.open(CONN_FILE, "r");
         if (f)
         {
+            bool isFristRound = true;
             while (f.available())
             {
                 String ln = f.readStringUntil('\n');
@@ -437,6 +451,7 @@ private:
                 if (p < 0)
                     continue;
                 String as = ln.substring(0, p), ps = ln.substring(p + 1);
+
                 Connection c;
                 std::istringstream ss(as.c_str());
                 uint16_t v;
@@ -447,11 +462,14 @@ private:
                         ss.ignore();
                 }
                 c.pin = uint8_t(ps.toInt());
-                connections.push_back(c);
+                physikalNode.logicalNode.connections.push_back(c);
+
+                if (isFristRound)
+                    isFristRound = false;
             }
             f.close();
         }
-        Serial.printf("[Web] %u connections loaded\n", (unsigned)connections.size());
+        Serial.printf("[Web] %u physikalNode.logicalNode.connections loaded\n", physikalNode.logicalNode.connections.size());
     }
 
     void saveConnections()
@@ -460,7 +478,16 @@ private:
         File f = LittleFS.open(CONN_FILE, "w");
         if (f)
         {
-            for (auto &c : connections)
+            // onwAddr
+            for (size_t i = 0; i < physikalNode.logicalNode.you.size(); ++i)
+            {
+                f.print(physikalNode.logicalNode.you[i]);
+                if (i + 1 < physikalNode.logicalNode.you.size())
+                    f.print(',');
+            }
+            f.print(':');
+            f.println(0);
+            for (auto &c : physikalNode.logicalNode.connections)
             {
                 for (size_t i = 0; i < c.address.size(); ++i)
                 {
@@ -472,7 +499,7 @@ private:
                 f.println(c.pin);
             }
             f.close();
-            Serial.println("[Web] connections saved");
+            Serial.println("[Web] physikalNode.logicalNode.connections saved");
         }
     }
 };
