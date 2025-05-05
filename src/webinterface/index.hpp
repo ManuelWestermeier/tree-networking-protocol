@@ -114,18 +114,18 @@ private:
         server.on("/connections/save", HTTP_POST, [&]()
                   { handleConnectionsSave(); });
         server.on("/messages", HTTP_GET, [&]() { //
-            String messages;
+            String msgs = messages.size() == 0 ? "NO MESSAGES YET" : "";
 
             for (const auto &message : messages)
-                messages += message + "\n";
+                msgs += "> " + message + "\n";
 
-            server.send(200, "text/plain", messages.c_str());
+            server.send(200, "text/plain", msgs.c_str());
         });
         server.on("/errors", HTTP_GET, [&]() { //
-            String messages;
+            String messages = errors.size() == 0 ? "NO ERRORS YET" : "";
 
             for (const auto &error : errors)
-                messages += error + "\n";
+                messages += "> " + error + "\n";
 
             server.send(200, "text/plain", messages.c_str());
         });
@@ -513,9 +513,9 @@ private:
               </ div>
 
                 <h4>Messages:</h4>
-              <iframe class="container" frameborder="0" src="/messages"></iframe>
+              <iframe class="config-card" frameborder="0" src="/messages"></iframe>
               <h4>Errors:</h4>
-              <iframe class="container" frameborder="0" src="/errors"></iframe>
+              <iframe class="config-card" frameborder="0" src="/errors"></iframe>
 
               </div>
 
