@@ -235,14 +235,6 @@ private:
     void handleConnections()
     {
         Serial.println("[Web] handleConnections: scan");
-        int n = WiFi.scanNetworks();
-        String list = "<ul class='list-group mb-3'>";
-        for (int i = 0; i < n; ++i)
-        {
-            list += "<li class='list-group-item'>" + WiFi.SSID(i) + "</li>";
-        }
-        list += "</ul>";
-
         String rows;
         for (auto &c : connections)
         {
@@ -289,14 +281,6 @@ private:
     <div class="col-md-6">
       <div class="card shadow-sm">
         <div class="card-body">
-          <h3 class="card-title">Available Wi-Fi Networks</h3>
-          %NET%
-        </div>
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="card shadow-sm">
-        <div class="card-body">
           <h3 class="card-title">Sensor Connections</h3>
           <form action="/connections/save" method="post">
             <table class="table">
@@ -325,7 +309,6 @@ private:
 </body>
 </html>
 )rawc";
-        page2.replace("%NET%", list);
         page2.replace("%ROWS%", rows);
         page2.replace("%SERVER_URL%", getServerURL());
         server.send(200, "text/html", page2);
