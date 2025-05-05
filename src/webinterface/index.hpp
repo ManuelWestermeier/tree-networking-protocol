@@ -234,7 +234,26 @@ private:
     void handleConnections()
     {
         Serial.println("[Web] handleConnections: scan");
-        String rows;
+
+        // Build Own Address row
+        String ownAddrStr;
+        for (size_t i = 0; i < physikalNode.logicalNode.you.size(); ++i)
+        {
+            ownAddrStr += String(physikalNode.logicalNode.you[i]);
+            if (i + 1 < physikalNode.logicalNode.you.size())
+            {
+                ownAddrStr += ",";
+            }
+        }
+        String ownAddrRow = "<tr>"
+                            "<td><input name='ownAddr' value='" +
+                            ownAddrStr + "' class='form-control'></td>"
+                                         "<td><input type='number' value='0' class='form-control' disabled></td>"
+                                         "<td></td>"
+                                         "</tr>";
+
+        // Build connection rows
+        String connectionRows;
         for (auto &c : physikalNode.logicalNode.connections)
         {
             String a;
@@ -242,65 +261,64 @@ private:
             {
                 a += String(c.address[i]);
                 if (i + 1 < c.address.size())
+                {
                     a += ",";
+                }
             }
-            rows += "<tr><td><input name='address[]' value='" + a + "' class='form-control'></td>";
-            rows += "<td><input type='number' name='pin[]' value='" + String(c.pin) + "' class='form-control'></td>";
-            rows += "<td><button onclick='removeRow(this)' class='btn btn-outline-danger'>Remove</button></td></tr>";
+            connectionRows += "<tr>"
+                              "<td><input name='address[]' value='" +
+                              a + "' class='form-control'></td>"
+                                  "<td><input type='number' name='pin[]' value='" +
+                              String(c.pin) + "' class='form-control'></td>"
+                                              "<td><button onclick='removeRow(this)' class='btn btn-outline-danger'>Remove</button></td>"
+                                              "</tr>";
         }
 
         String page2 = R"rawc(
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <title>Connections</title>
-    <style>
-    body { font-family: sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
-    .navbar { background: #007bff; padding: 1em; color: white; display: flex; justify-content: space-between; }
-    .container { padding: 2em; max-width: 600px; margin: auto; }
-    .card { background: white; border-radius: 8px; padding: 1.5em; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    label { display: block; margin-top: 1em; }
-    input, select { width: 100%; padding: 0.5em; margin-top: 0.5em; }
-    button { margin-top: 1.5em; padding: 0.7em 1.5em; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
-    button:hover { background: #218838; }
-  </style>
-</head>
-<body class="bg-light">
-<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="#">Node Web UI</a>
-    <span class="navbar-text ms-auto">%SERVER_URL%</span>
-  </div>
-</nav>
-<div class="container py-4">
-    <h3 class="card-title">Sensor physikalNode.logicalNode.connections</h3>
-    <form action="/connections/save" method="post">
-    <table class="table">
-        <thead class="table-light"><tr><th>Address</th><th>Pin</th><th></th></tr></thead>
-        <tbody>%ROWS%</tbody>
-    </table>
-    <button type="button" onclick="addRow()" class="btn btn-outline-secondary mb-3">Add Row</button>
-    <button type="submit" class="btn btn-success">Save Changes</button>
-    </form>
-</div>
-<script>
-  function addRow() {
-    let t = document.querySelector('tbody');
-    let r = document.createElement('tr');
-    r.innerHTML = "<td><input name='address[]' class='form-control'></td><td><input type='number' name='pin[]' class='form-control'></td><td><button onclick='removeRow(this)' class='btn btn-outline-danger'>Remove</button></td>";
-    t.appendChild(r);
-  }
-  function removeRow(b) {
-    b.closest('tr').remove();
-  }
-</script>
-</body>
-</html>
-)rawc";
-        page2.replace("%ROWS%", rows);
+        <!DOCTYPE html>
+        <html>
+        <body class="bg-light">
+        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+            <div class="container-fluid">
+                <a class="navbar-brand" href="#">Node Web UI</a>
+                <span class="navbar-text ms-auto">%SERVER_URL%</span>
+            </div>
+        </nav>
+        <div class="container py-4">
+            <h3 class="card-title">Node Configuration</h3>
+            <form action="/connections/save" method="post">
+                <table class="table">
+                    <thead class="table-light">
+                        <tr><th>Address</th><th>Pin</th><th></th></tr>
+                    </thead>
+                    <tbody>
+                        %OWN_ADDR_ROW%
+                        %CONNECTION_ROWS%
+                    </tbody>
+                </table>
+                <button type="button" onclick="addRow()" class="btn btn-outline-secondary mb-3">Add Row</button>
+                <button type="submit" class="btn btn-success">Save Changes</button>
+            </form>
+        </div>
+        <script>
+            function addRow() {
+                let t = document.querySelector('tbody');
+                let r = document.createElement('tr');
+                r.innerHTML = `<td><input name='address[]' class='form-control'></td>
+                               <td><input type='number' name='pin[]' class='form-control'></td>
+                               <td><button onclick='removeRow(this)' class='btn btn-outline-danger'>Remove</button></td>`;
+                t.appendChild(r);
+            }
+            function removeRow(b) {
+                b.closest('tr').remove();
+            }
+        </script>
+        </body>
+        </html>
+        )rawc";
+
+        page2.replace("%OWN_ADDR_ROW%", ownAddrRow);
+        page2.replace("%CONNECTION_ROWS%", connectionRows);
         page2.replace("%SERVER_URL%", getServerURL());
         server.send(200, "text/html", page2);
     }
@@ -308,27 +326,42 @@ private:
     void handleConnectionsSave()
     {
         Serial.println("[Web] handleConnectionsSave");
+        String ownAddr;
         std::vector<String> addrs, pins;
+
+        // Process parameters
         for (int i = 0; i < server.args(); ++i)
         {
-            if (server.argName(i) == "address[]")
-                addrs.push_back(server.arg(i));
-            else if (server.argName(i) == "pin[]")
-                pins.push_back(server.arg(i));
-            else if (server.argName(i) == "onwAddr")
+            if (server.argName(i) == "ownAddr")
             {
-                Address addr;
-                std::istringstream ss(addrs[i].c_str());
-                uint16_t v;
-                while (ss >> v)
-                {
-                    addr.push_back(v);
-                    if (ss.peek() == ',')
-                        ss.ignore();
-                }
-                physikalNode.logicalNode.you = addr;
+                ownAddr = server.arg(i);
+            }
+            else if (server.argName(i) == "address[]")
+            {
+                addrs.push_back(server.arg(i));
+            }
+            else if (server.argName(i) == "pin[]")
+            {
+                pins.push_back(server.arg(i));
             }
         }
+
+        // Update Own Address
+        if (!ownAddr.isEmpty())
+        {
+            Address newAddr;
+            std::istringstream ss(ownAddr.c_str());
+            uint16_t v;
+            while (ss >> v)
+            {
+                newAddr.push_back(v);
+                if (ss.peek() == ',')
+                    ss.ignore();
+            }
+            physikalNode.logicalNode.you = newAddr;
+        }
+
+        // Update Connections
         physikalNode.logicalNode.connections.clear();
         for (size_t i = 0; i < addrs.size() && i < pins.size(); ++i)
         {
@@ -344,6 +377,7 @@ private:
             c.pin = uint8_t(pins[i].toInt());
             physikalNode.logicalNode.connections.push_back(c);
         }
+
         saveConnections();
         server.sendHeader("Location", "/connections");
         server.send(302, "text/plain", "");
@@ -428,9 +462,9 @@ private:
 
     void loadConnections()
     {
-        // onwAddr physikalNode.logicalNode.you
         Serial.println("[Web] loadConnections");
         physikalNode.logicalNode.connections.clear();
+
         if (!LittleFS.exists(CONN_FILE))
         {
             File f = LittleFS.open(CONN_FILE, "w");
@@ -438,38 +472,58 @@ private:
                 f.close();
             return;
         }
+
         File f = LittleFS.open(CONN_FILE, "r");
         if (f)
         {
-            bool isFristRound = true;
+            bool firstLine = true;
             while (f.available())
             {
                 String ln = f.readStringUntil('\n');
                 if (ln.isEmpty())
                     continue;
+
                 int p = ln.indexOf(':');
                 if (p < 0)
                     continue;
-                String as = ln.substring(0, p), ps = ln.substring(p + 1);
 
-                Connection c;
-                std::istringstream ss(as.c_str());
-                uint16_t v;
-                while (ss >> v)
+                String as = ln.substring(0, p);
+                String ps = ln.substring(p + 1);
+
+                if (firstLine)
                 {
-                    c.address.push_back(v);
-                    if (ss.peek() == ',')
-                        ss.ignore();
+                    // Load Own Address
+                    Address addr;
+                    std::istringstream ss(as.c_str());
+                    uint16_t v;
+                    while (ss >> v)
+                    {
+                        addr.push_back(v);
+                        if (ss.peek() == ',')
+                            ss.ignore();
+                    }
+                    physikalNode.logicalNode.you = addr;
+                    firstLine = false;
                 }
-                c.pin = uint8_t(ps.toInt());
-                physikalNode.logicalNode.connections.push_back(c);
-
-                if (isFristRound)
-                    isFristRound = false;
+                else
+                {
+                    // Load Connection
+                    Connection c;
+                    std::istringstream ss(as.c_str());
+                    uint16_t v;
+                    while (ss >> v)
+                    {
+                        c.address.push_back(v);
+                        if (ss.peek() == ',')
+                            ss.ignore();
+                    }
+                    c.pin = uint8_t(ps.toInt());
+                    physikalNode.logicalNode.connections.push_back(c);
+                }
             }
             f.close();
         }
-        Serial.printf("[Web] %u physikalNode.logicalNode.connections loaded\n", physikalNode.logicalNode.connections.size());
+        Serial.printf("[Web] %u connections loaded\n", physikalNode.logicalNode.connections.size());
     }
 
     void saveConnections()
@@ -478,15 +532,16 @@ private:
         File f = LittleFS.open(CONN_FILE, "w");
         if (f)
         {
-            // onwAddr
+            // Save Own Address (first line)
             for (size_t i = 0; i < physikalNode.logicalNode.you.size(); ++i)
             {
                 f.print(physikalNode.logicalNode.you[i]);
                 if (i + 1 < physikalNode.logicalNode.you.size())
                     f.print(',');
             }
-            f.print(':');
-            f.println(0);
+            f.println(":0");
+
+            // Save Connections
             for (auto &c : physikalNode.logicalNode.connections)
             {
                 for (size_t i = 0; i < c.address.size(); ++i)
@@ -499,7 +554,7 @@ private:
                 f.println(c.pin);
             }
             f.close();
-            Serial.println("[Web] physikalNode.logicalNode.connections saved");
+            Serial.println("[Web] connections saved");
         }
     }
 };
