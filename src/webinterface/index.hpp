@@ -517,11 +517,14 @@ private:
           <div class="form-group">
                     <label class="form-label">Destination Address</label>
                     <input type="text" name="address" value="" placeholder="x,x,x,..." class="form-input">
-                    <input type="text" name="message" value="max 10" placeholder="text..." class="form-input">
                     <div class="help-text">
                         Enter node's address as comma-separated numbers (e.g., "1,2,3") not (e.g., "1,02,3") not (e.g., " 1, 2,3")<br>
                         Each number represents a level in the network hierarchy
                     </div>
+                    <br>
+                    <input type="text" name="message" value="max 10" placeholder="text..." class="form-input">
+                    <br>
+                    <button type="submit" class="btn btn-outline">Send Message (Max 10 Chars)</button>
                 </div>
         </form>
             <form action="/connections/save" method="post">
