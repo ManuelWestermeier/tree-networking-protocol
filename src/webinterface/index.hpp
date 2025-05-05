@@ -525,6 +525,9 @@ private:
 <body>
     <nav class="navbar">
         <div>Node Configuration</div>
+        <div>
+            <a href="/wifi">Wifi</a>
+        </div>
         <div>%SERVER_URL%</div>
     </nav>
     
