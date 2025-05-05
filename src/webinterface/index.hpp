@@ -105,6 +105,8 @@ private:
 
         server.on("/", HTTP_GET, [&]()
                   { handleRoot(); });
+        server.on("/send", HTTP_POST, [&]()
+                  { handleSend(); });
         server.on("/wifi", HTTP_GET, [&]()
                   { handleWifi(); });
         server.on("/wifi/connect", HTTP_GET, [&]()
@@ -222,6 +224,37 @@ private:
             server.sendHeader("Location", "/wifi");
             server.send(302, "text/plain", "");
         }
+    }
+
+    void handleSend()
+    {
+        Serial.println("[Web] handle send");
+        String rawAddress = server.arg(1);
+        String rawMsg = server.arg(0);
+
+        char *data = "          ";
+        Address address;
+
+        std::istringstream ss(rawAddress.c_str());
+        uint16_t v;
+        while (ss >> v)
+        {
+            address.push_back(v);
+            if (ss.peek() == ',')
+                ss.ignore();
+        }
+
+        uint8_t minLen = rawMsg.length() > 10 ? 10 : rawMsg.length();
+
+        for (uint8_t i = 0; i < minLen; i++)
+        {
+            data[i] = rawMsg.charAt(i);
+        }
+
+        physikalNode.send(address, data);
+
+        server.sendHeader("Location", "/connections");
+        server.send(302, "text/plain", "");
     }
 
     void handleWifi()
@@ -480,6 +513,17 @@ private:
     
     <div class="container">
         <div class="config-card">
+        <form action="/send" method="post">
+          <div class="form-group">
+                    <label class="form-label">Destination Address</label>
+                    <input type="text" name="address" value="" placeholder="x,x,x,..." class="form-input">
+                    <input type="text" name="message" value="max 10" placeholder="text..." class="form-input">
+                    <div class="help-text">
+                        Enter node's address as comma-separated numbers (e.g., "1,2,3") not (e.g., "1,02,3") not (e.g., " 1, 2,3")<br>
+                        Each number represents a level in the network hierarchy
+                    </div>
+                </div>
+        </form>
             <form action="/connections/save" method="post">
                 <div class="form-group">
                     <label class="form-label">Own Address</label>
