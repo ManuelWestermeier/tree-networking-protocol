@@ -539,7 +539,7 @@ private:
                         Each number represents a level in the network hierarchy
                     </div>
                     <br>
-                    <input style="margin-bottom: 5px;" type="text" name="message" value="max 10" placeholder="text..." class="form-input">
+                    <input style="margin-bottom: 5px;" type="text" name="message" placeholder="text...max 10 chars" class="form-input">
                     <br>
                     <button type="submit" class="btn btn-outline">Send Message (Max 10 Chars)</button>
                 </div>
