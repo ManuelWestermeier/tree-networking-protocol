@@ -81,6 +81,10 @@ private:
         Serial.println("[WebTask] server.begin");
         self->server.begin();
         Serial.printf("[WebTask] running on port %u\n", self->serverPort);
+
+        Serial.println("[WebTask] started");
+        Serial.println("Server URL: " + self->getServerURL());
+
         while (true)
         {
             self->server.handleClient();
@@ -102,6 +106,9 @@ private:
                   { handleConnectionsSave(); });
         server.onNotFound([&]()
                           { server.send(404, "text/plain", "Not Found"); });
+
+        server.on("/favicon.ico", HTTP_GET, [&]()
+                  { server.send(204, "text/plain", ""); });
     }
 
     // Helper to build server URL
@@ -144,34 +151,35 @@ private:
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <title>Wi-Fi Setup</title>
+  <style>
+    body { font-family: sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+    .navbar { background: #007bff; padding: 1em; color: white; display: flex; justify-content: space-between; }
+    .container { padding: 2em; max-width: 600px; margin: auto; }
+    .card { background: white; border-radius: 8px; padding: 1.5em; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    label { display: block; margin-top: 1em; }
+    input, select { width: 100%; padding: 0.5em; margin-top: 0.5em; }
+    button { margin-top: 1.5em; padding: 0.7em 1.5em; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #218838; }
+  </style>
 </head>
-<body class="bg-light">
-<nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-  <div class="container-fluid">
-    <a class="navbar-brand" href="#">Node Web UI</a>
-    <span class="navbar-text ms-auto">%SERVER_URL%</span>
+<body>
+  <div class="navbar">
+    <div>Node Web UI</div>
+    <div>%SERVER_URL%</div>
   </div>
-</nav>
-<div class="container py-4">
-  <div class="card shadow-sm">
-    <div class="card-body">
-      <h2 class="card-title mb-4">Connect to Wi-Fi</h2>
+  <div class="container">
+    <div class="card">
+      <h2>Connect to Wi-Fi</h2>
       <form action="/wifi/connect" method="get">
-        <div class="mb-3">
-          <label class="form-label">SSID</label>
-          <select name="ssid" class="form-select">%OPTIONS%</select>
-        </div>
-        <div class="mb-3">
-          <label class="form-label">Password</label>
-          <input type="password" name="pass" class="form-control" required>
-        </div>
-        <button type="submit" class="btn btn-success">Connect</button>
+        <label>SSID</label>
+        <select name="ssid">%OPTIONS%</select>
+        <label>Password</label>
+        <input type="password" name="pass" required>
+        <button type="submit">Connect</button>
       </form>
     </div>
   </div>
-</div>
 </body>
 </html>
 )rawl";
@@ -198,9 +206,21 @@ private:
             server.send(200, "text/html", R"rawf(
 <!DOCTYPE html>
 <html lang="en">
-<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-<title>Connection Failed</title></head>
+<title>Connection Failed</title>
+  <style>
+    body { font-family: sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+    .navbar { background: #007bff; padding: 1em; color: white; display: flex; justify-content: space-between; }
+    .container { padding: 2em; max-width: 600px; margin: auto; }
+    .card { background: white; border-radius: 8px; padding: 1.5em; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    label { display: block; margin-top: 1em; }
+    input, select { width: 100%; padding: 0.5em; margin-top: 0.5em; }
+    button { margin-top: 1.5em; padding: 0.7em 1.5em; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #218838; }
+  </style>
+</head>
 <body class="bg-light p-4">
 <div class="alert alert-danger">Failed to connect to Wi-Fi. <a href="/wifi" class="alert-link">Try again</a>.</div>
 </body>
@@ -243,6 +263,16 @@ private:
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
   <title>Connections</title>
+    <style>
+    body { font-family: sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+    .navbar { background: #007bff; padding: 1em; color: white; display: flex; justify-content: space-between; }
+    .container { padding: 2em; max-width: 600px; margin: auto; }
+    .card { background: white; border-radius: 8px; padding: 1.5em; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    label { display: block; margin-top: 1em; }
+    input, select { width: 100%; padding: 0.5em; margin-top: 0.5em; }
+    button { margin-top: 1.5em; padding: 0.7em 1.5em; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #218838; }
+  </style>
 </head>
 <body class="bg-light">
 <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
