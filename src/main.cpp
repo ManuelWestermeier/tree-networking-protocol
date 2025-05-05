@@ -1,6 +1,6 @@
 #include <Arduino.h>
 
-#include "webinterface/webinterface.hpp"
+#include "webinterface/index.hpp"
 
 WebInterface webif;
 
