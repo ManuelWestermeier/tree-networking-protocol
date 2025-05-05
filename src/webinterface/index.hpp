@@ -142,7 +142,7 @@ private:
     void handleWifi()
     {
         Serial.println("[Web] handleWifi: scan");
-        int n = WiFi.scanNetworks(true);
+        int n = WiFi.scanNetworks();
         String opts;
         for (int i = 0; i < n; ++i)
         {
