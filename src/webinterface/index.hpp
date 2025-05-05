@@ -325,7 +325,7 @@ private:
                               a + R"(' class='form-input'></td>
                     <td><input type='number' name='pin[]' value=')" +
                               String(c.pin) + R"(' class='form-input'></td>
-                    <td><button type='button' onclick='removeRow(this)' class='btn-danger'>Remove</button></td>
+                    <td><button type='button' onclick='removeRow(this)' class='btn-danger btn'>Remove</button></td>
                 </tr>)";
         }
 
@@ -477,7 +477,7 @@ private:
             = "btn btn-outline" > Add Connection</ button>
               </ div>
 
-              <button type = "submit" class = "btn btn-success"> Save Configuration</ button>
+              <button type = "submit" class = "btn btn-success" style="margin-left: 5px;"> Save Configuration</ button>
               </ form>
               </ div>
               </ div>
@@ -490,7 +490,7 @@ private:
             row.innerHTML = ` <td><input name = "address[]" class = "form-input"></ td>
                 <td><input type = "number" name = "pin[]" class = "form-input"></ td>
                 <td><button type = "button" onclick = "removeRow(this) " class
-            = "btn-danger" > Remove</ button></ td>
+            = "btn-danger btn" > Remove</ button></ td>
             `;
         tbody.appendChild(row);
     }
