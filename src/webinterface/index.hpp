@@ -68,17 +68,24 @@ WebInterface::WebInterface(uint16_t port)
 
 void WebInterface::begin()
 {
+    Serial.println(1);
     if (!LittleFS.begin(true))
     {
+        LittleFS.format();
         Serial.println("LittleFS Mount Failed");
         return;
     }
 
+    Serial.println(2);
+
     // Load or generate persistent AP suffix
     loadAPSuffix();
+    Serial.println(3);
 
     // Load Wi-Fi credentials and attempt connection
     loadCredentials();
+    Serial.println(4);
+
     if (!wifiSSID.isEmpty() && !connectWiFi(wifiSSID, wifiPassword))
     {
         // Start AP with persistent suffix
