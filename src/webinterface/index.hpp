@@ -123,6 +123,66 @@ private:
         return out;
     }
 
+    void handleConnectionsSave()
+    {
+        Serial.println("[Web] handleConnectionsSave");
+        String ownAddr;
+        std::vector<String> addrs, pins;
+
+        // Process parameters
+        for (int i = 0; i < server.args(); ++i)
+        {
+            if (server.argName(i) == "ownAddr")
+            {
+                ownAddr = server.arg(i);
+            }
+            else if (server.argName(i) == "address[]")
+            {
+                addrs.push_back(server.arg(i));
+            }
+            else if (server.argName(i) == "pin[]")
+            {
+                pins.push_back(server.arg(i));
+            }
+        }
+
+        // Update Own Address
+        if (!ownAddr.isEmpty())
+        {
+            Address newAddr;
+            std::istringstream ss(ownAddr.c_str());
+            uint16_t v;
+            while (ss >> v)
+            {
+                newAddr.push_back(v);
+                if (ss.peek() == ',')
+                    ss.ignore();
+            }
+            physikalNode.logicalNode.you = newAddr;
+        }
+
+        // Update Connections
+        physikalNode.logicalNode.connections.clear();
+        for (size_t i = 0; i < addrs.size() && i < pins.size(); ++i)
+        {
+            Connection c;
+            std::istringstream ss(addrs[i].c_str());
+            uint16_t v;
+            while (ss >> v)
+            {
+                c.address.push_back(v);
+                if (ss.peek() == ',')
+                    ss.ignore();
+            }
+            c.pin = uint8_t(pins[i].toInt());
+            physikalNode.logicalNode.connections.push_back(c);
+        }
+
+        saveConnections();
+        server.sendHeader("Location", "/connections");
+        server.send(302, "text/plain", "");
+    }
+
     void handleRoot()
     {
         Serial.println("[Web] handleRoot");
@@ -235,7 +295,7 @@ private:
     {
         Serial.println("[Web] handleConnections: scan");
 
-        // Build Own Address row
+        // Build Own Address section
         String ownAddrStr;
         for (size_t i = 0; i < physikalNode.logicalNode.you.size(); ++i)
         {
@@ -245,12 +305,6 @@ private:
                 ownAddrStr += ",";
             }
         }
-        String ownAddrRow = "<tr>"
-                            "<td><input name='ownAddr' value='" +
-                            ownAddrStr + "' class='form-control'></td>"
-                                         "<td><input type='number' value='0' class='form-control' disabled></td>"
-                                         "<td></td>"
-                                         "</tr>";
 
         // Build connection rows
         String connectionRows;
@@ -265,125 +319,199 @@ private:
                     a += ",";
                 }
             }
-            connectionRows += "<tr>"
-                              "<td><input name='address[]' value='" +
-                              a + "' class='form-control'></td>"
-                                  "<td><input type='number' name='pin[]' value='" +
-                              String(c.pin) + "' class='form-control'></td>"
-                                              "<td><button onclick='removeRow(this)' class='btn btn-outline-danger'>Remove</button></td>"
-                                              "</tr>";
+            connectionRows += R"(
+                <tr>
+                    <td><input name='address[]' value=')" +
+                              a + R"(' class='form-input'></td>
+                    <td><input type='number' name='pin[]' value=')" +
+                              String(c.pin) + R"(' class='form-input'></td>
+                    <td><button type='button' onclick='removeRow(this)' class='btn-danger'>Remove</button></td>
+                </tr>)";
         }
 
-        String page2 = R"rawc(
-        <!DOCTYPE html>
-        <html>
-        <body class="bg-light">
-        <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
-            <div class="container-fluid">
-                <a class="navbar-brand" href="#">Node Web UI</a>
-                <span class="navbar-text ms-auto">%SERVER_URL%</span>
-            </div>
-        </nav>
-        <div class="container py-4">
-            <h3 class="card-title">Node Configuration</h3>
+        String page = R"(
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Node Configuration</title>
+    <style>
+        :root {
+            --primary: #007bff;
+            --success: #28a745;
+            --danger: #dc3545;
+            --background: #f8f9fa;
+            --card-bg: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--background);
+        }
+        
+        .navbar {
+            background-color: var(--primary);
+            color: white;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .config-card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        
+        .btn-success {
+            background-color: var(--success);
+            color: white;
+        }
+        
+        .btn-danger {
+            background-color: var(--danger);
+            color: white;
+        }
+        
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #ced4da;
+            color: #495057;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+        }
+        
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        th {
+            background-color: var(--background);
+            font-weight: 500;
+        }
+        
+        .help-text {
+            color: #6c757d;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div>Node Configuration</div>
+        <div>%SERVER_URL%</div>
+    </nav>
+    
+    <div class="container">
+        <div class="config-card">
             <form action="/connections/save" method="post">
-                <table class="table">
-                    <thead class="table-light">
-                        <tr><th>Address</th><th>Pin</th><th></th></tr>
-                    </thead>
-                    <tbody>
-                        %OWN_ADDR_ROW%
-                        %CONNECTION_ROWS%
-                    </tbody>
-                </table>
-                <button type="button" onclick="addRow()" class="btn btn-outline-secondary mb-3">Add Row</button>
-                <button type="submit" class="btn btn-success">Save Changes</button>
-            </form>
-        </div>
-        <script>
-            function addRow() {
-                let t = document.querySelector('tbody');
-                let r = document.createElement('tr');
-                r.innerHTML = `<td><input name='address[]' class='form-control'></td>
-                               <td><input type='number' name='pin[]' class='form-control'></td>
-                               <td><button onclick='removeRow(this)' class='btn btn-outline-danger'>Remove</button></td>`;
-                t.appendChild(r);
-            }
-            function removeRow(b) {
-                b.closest('tr').remove();
-            }
-        </script>
-        </body>
-        </html>
-        )rawc";
+                <div class="form-group">
+                    <label class="form-label">Own Address</label>
+                    <input type="text" name="ownAddr" value="%OWN_ADDR%" class="form-input">
+                    <div class="help-text">
+                        Enter your node's address as comma-separated numbers (e.g., "1,2,3")<br>
+                        Each number represents a level in the network hierarchy
+                    </div>
+                </div>
 
-        page2.replace("%OWN_ADDR_ROW%", ownAddrRow);
-        page2.replace("%CONNECTION_ROWS%", connectionRows);
-        page2.replace("%SERVER_URL%", getServerURL());
-        server.send(200, "text/html", page2);
+                <div class="form-group">
+                    <label class="form-label">Connections</label>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Address</th>
+                                <th>Pin</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            %CONNECTION_ROWS%
+                        </tbody>
+                    </table>
+                    <button type="button" onclick="addRow() " class
+            = "btn btn-outline" > Add Connection</ button>
+              </ div>
+
+              <button type = "submit" class = "btn btn-success"> Save Configuration</ button>
+              </ form>
+              </ div>
+              </ div>
+
+              <script>
+                  function addRow()
+        {
+            const tbody = document.querySelector('tbody');
+            const row = document.createElement('tr');
+            row.innerHTML = ` <td><input name = "address[]" class = "form-input"></ td>
+                <td><input type = "number" name = "pin[]" class = "form-input"></ td>
+                <td><button type = "button" onclick = "removeRow(this) " class
+            = "btn-danger" > Remove</ button></ td>
+            `;
+        tbody.appendChild(row);
     }
 
-    void handleConnectionsSave()
+    function removeRow(btn)
     {
-        Serial.println("[Web] handleConnectionsSave");
-        String ownAddr;
-        std::vector<String> addrs, pins;
+        btn.closest('tr').remove();
+    }
+    </script>
+</body>
+</html>
+        )";
 
-        // Process parameters
-        for (int i = 0; i < server.args(); ++i)
-        {
-            if (server.argName(i) == "ownAddr")
-            {
-                ownAddr = server.arg(i);
-            }
-            else if (server.argName(i) == "address[]")
-            {
-                addrs.push_back(server.arg(i));
-            }
-            else if (server.argName(i) == "pin[]")
-            {
-                pins.push_back(server.arg(i));
-            }
-        }
-
-        // Update Own Address
-        if (!ownAddr.isEmpty())
-        {
-            Address newAddr;
-            std::istringstream ss(ownAddr.c_str());
-            uint16_t v;
-            while (ss >> v)
-            {
-                newAddr.push_back(v);
-                if (ss.peek() == ',')
-                    ss.ignore();
-            }
-            physikalNode.logicalNode.you = newAddr;
-        }
-
-        // Update Connections
-        physikalNode.logicalNode.connections.clear();
-        for (size_t i = 0; i < addrs.size() && i < pins.size(); ++i)
-        {
-            Connection c;
-            std::istringstream ss(addrs[i].c_str());
-            uint16_t v;
-            while (ss >> v)
-            {
-                c.address.push_back(v);
-                if (ss.peek() == ',')
-                    ss.ignore();
-            }
-            c.pin = uint8_t(pins[i].toInt());
-            physikalNode.logicalNode.connections.push_back(c);
-        }
-
-        saveConnections();
-        server.sendHeader("Location", "/connections");
-        server.send(302, "text/plain", "");
+        page.replace("%OWN_ADDR%", ownAddrStr);
+        page.replace("%CONNECTION_ROWS%", connectionRows);
+        page.replace("%SERVER_URL%", getServerURL());
+        server.send(200, "text/html", page);
     }
 
-    bool connectWiFi(const String &ssid, const String &pwd)
+    bool
+    connectWiFi(const String &ssid, const String &pwd)
     {
         Serial.printf("[Web] connectWiFi '%s'\n", ssid.c_str());
         WiFi.begin(ssid.c_str(), pwd.c_str());
