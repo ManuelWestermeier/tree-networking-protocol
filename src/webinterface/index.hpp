@@ -454,7 +454,7 @@ private:
                     <label class="form-label">Own Address</label>
                     <input type="text" name="ownAddr" value="%OWN_ADDR%" class="form-input">
                     <div class="help-text">
-                        Enter your node's address as comma-separated numbers (e.g., "1,2,3")<br>
+                        Enter your node's address as comma-separated numbers (e.g., "1,2,3") not (e.g., "1,02,3") not (e.g., " 1, 2,3")<br>
                         Each number represents a level in the network hierarchy
                     </div>
                 </div>
