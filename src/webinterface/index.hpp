@@ -69,8 +69,9 @@ private:
     uint16_t serverPort;
     String wifiSSID, wifiPassword;
     uint16_t apSuffix;
-    // std::vector<Connection> physikalNode.logicalNode.connections;
     PhysikalNode physikalNode;
+    vector<String> messages;
+    vector<String> errors;
 
     static void webTask(void *p)
     {
@@ -93,6 +94,15 @@ private:
 
     void setupRoutes()
     {
+        physikalNode.onData = [&](String data)
+        {
+            messages.push_back(data);
+        };
+        physikalNode.onError = [&](String error)
+        {
+            errors.push_back(error);
+        };
+
         server.on("/", HTTP_GET, [&]()
                   { handleRoot(); });
         server.on("/wifi", HTTP_GET, [&]()
@@ -103,6 +113,22 @@ private:
                   { handleConnections(); });
         server.on("/connections/save", HTTP_POST, [&]()
                   { handleConnectionsSave(); });
+        server.on("/messages", HTTP_GET, [&]() { //
+            String messages;
+
+            for (const auto &message : messages)
+                messages += message + "\n";
+
+            server.send(200, "text/plain", messages.c_str());
+        });
+        server.on("/errors", HTTP_GET, [&]() { //
+            String messages;
+
+            for (const auto &error : errors)
+                messages += error + "\n";
+
+            server.send(200, "text/plain", messages.c_str());
+        });
         server.onNotFound([&]()
                           { server.send(404, "text/plain", "Not Found"); });
 
@@ -439,6 +465,11 @@ private:
             font-size: 0.9rem;
             margin-top: 0.5rem;
         }
+
+        iframe {
+            width: 100%;
+            height: 30dvh;
+        }
     </style>
 </head>
 <body>
@@ -480,6 +511,12 @@ private:
               <button type = "submit" class = "btn btn-success" style="margin-left: 5px;"> Save Configuration</ button>
               </ form>
               </ div>
+
+                <h4>Messages:</h4>
+              <iframe frameborder="0" src="/messages"></iframe>
+              <h4>Errors:</h4>
+              <iframe frameborder="0" src="/errors"></iframe>
+
               </ div>
 
               <script>
@@ -503,6 +540,9 @@ private:
 </body>
 </html>
         )";
+
+        page.replace("< ", "<");
+        page.replace(" >", ">");
 
         page.replace("%OWN_ADDR%", ownAddrStr);
         page.replace("%CONNECTION_ROWS%", connectionRows);
