@@ -1,20 +1,25 @@
 #pragma once
 
+#include <Arduino.h>
 #include <esp_system.h>
 #include <WiFi.h>
 #include <WebServer.h>
 #include <LittleFS.h>
 #include <vector>
 #include <sstream>
-
 #include "../protocoll/index.hpp"
+
+#define WIFI_CRED_FILE "/wifi.txt"
+#define CONN_FILE "/connections.txt"
+#define AP_SUFFIX_FILE "/apsuffix.txt"
+#define DEFAULT_AP_SSID "NodeAP"
+#define WIFI_CONNECT_TIMEOUT_MS 10000
 
 class WebInterface
 {
 public:
     explicit WebInterface(uint16_t port = 80);
     void begin();
-
     // Retrieve saved connection configurations
     const std::vector<Connection> &getConnections() const { return connections; }
 
@@ -32,11 +37,11 @@ private:
 
     // Wi-Fi and storage utilities
     bool connectWiFi(const String &ssid, const String &password);
+    void loadAPSuffix();
     void loadCredentials();
     void saveCredentials();
     void loadConnections();
     void saveConnections();
-    void loadAPSuffix();
 
     // Underlying HTTP server
     WebServer server;
@@ -46,7 +51,7 @@ private:
     String wifiPassword;
 
     // Persistent random suffix for AP name
-    uint16_t apSuffix = 0;
+    uint16_t apSuffix;
 
     // Saved network connections (addresses and pins)
     std::vector<Connection> connections;
@@ -55,42 +60,31 @@ private:
     uint16_t serverPort;
 };
 
-#define WIFI_CRED_FILE "/wifi.txt"
-#define CONN_FILE "/connections.txt"
-#define AP_SUFFIX_FILE "/apsuffix.txt"
-#define DEFAULT_AP_SSID "NodeAP"
-#define WIFI_CONNECT_TIMEOUT_MS 10000
-
 WebInterface::WebInterface(uint16_t port)
-    : serverPort(port), server(port)
-{
-}
+    : serverPort(port), server(port), apSuffix(0) {}
 
 void WebInterface::begin()
 {
-    Serial.println(1);
-    if (!LittleFS.begin(true))
+    Serial.println("[WebInterface] Mounting LittleFS...");
+    if (!LittleFS.begin())
     {
-        LittleFS.format();
-        Serial.println("LittleFS Mount Failed");
-        return;
+        Serial.println("[WebInterface] LittleFS mount failed. Formatting...");
+        if (!LittleFS.format() || !LittleFS.begin())
+        {
+            Serial.println("[WebInterface] LittleFS mount after format failed!");
+            return;
+        }
     }
+    Serial.println("[WebInterface] LittleFS mounted.");
 
-    Serial.println(2);
-
-    // Load or generate persistent AP suffix
     loadAPSuffix();
-    Serial.println(3);
-
-    // Load Wi-Fi credentials and attempt connection
     loadCredentials();
-    Serial.println(4);
 
+    Serial.println("[WebInterface] Checking WiFi credentials...");
     if (!wifiSSID.isEmpty() && !connectWiFi(wifiSSID, wifiPassword))
     {
-        // Start AP with persistent suffix
         String fullSSID = String(DEFAULT_AP_SSID) + "_" + String(apSuffix);
-        Serial.printf("Starting AP mode: %s\n", fullSSID.c_str());
+        Serial.printf("[WebInterface] Starting AP mode: %s\n", fullSSID.c_str());
         WiFi.softAP(fullSSID.c_str());
     }
 
@@ -108,43 +102,138 @@ void WebInterface::begin()
 
 void WebInterface::loadAPSuffix()
 {
-    if (LittleFS.exists(AP_SUFFIX_FILE))
+    if (!LittleFS.exists(AP_SUFFIX_FILE))
     {
-        File f = LittleFS.open(AP_SUFFIX_FILE, "r+");
-        apSuffix = f.readStringUntil('\n').toInt();
+        apSuffix = esp_random() & 0xFFFF;
+        File f = LittleFS.open(AP_SUFFIX_FILE, "w");
+        if (!f)
+        {
+            Serial.println("[WebInterface] Failed to create AP suffix file.");
+            return;
+        }
+        f.println(apSuffix);
         f.close();
     }
     else
     {
-        // Generate a random 16-bit suffix
-        apSuffix = esp_random() & 0xFFFF;
-        File f = LittleFS.open(AP_SUFFIX_FILE, "w+");
-        if (f)
+        File f = LittleFS.open(AP_SUFFIX_FILE, "r");
+        if (!f)
         {
-            f.println(apSuffix);
-            f.close();
+            Serial.println("[WebInterface] Failed to open AP suffix file for reading.");
+            return;
         }
+        String s = f.readStringUntil('\n');
+        s.trim();
+        apSuffix = s.toInt();
+        f.close();
     }
+}
+
+void WebInterface::loadCredentials()
+{
+    if (!LittleFS.exists(WIFI_CRED_FILE))
+    {
+        Serial.println("[WebInterface] No WiFi credential file found. Creating new one.");
+        File f = LittleFS.open(WIFI_CRED_FILE, "w");
+        if (f)
+            f.close();
+        return;
+    }
+    File f = LittleFS.open(WIFI_CRED_FILE, "r");
+    if (!f)
+    {
+        Serial.println("[WebInterface] Failed to open WiFi credential file for reading.");
+        return;
+    }
+    wifiSSID = f.readStringUntil('\n');
+    wifiSSID.trim();
+    wifiPassword = f.readStringUntil('\n');
+    wifiPassword.trim();
+    f.close();
+}
+
+void WebInterface::saveCredentials()
+{
+    File f = LittleFS.open(WIFI_CRED_FILE, "w");
+    if (!f)
+    {
+        Serial.println("[WebInterface] Failed to open WiFi credential file for writing.");
+        return;
+    }
+    f.println(wifiSSID);
+    f.println(wifiPassword);
+    f.close();
+    Serial.println("[WebInterface] WiFi credentials saved.");
+}
+
+void WebInterface::loadConnections()
+{
+    connections.clear();
+    if (!LittleFS.exists(CONN_FILE))
+    {
+        Serial.println("[WebInterface] No connections file found.");
+        return;
+    }
+    File f = LittleFS.open(CONN_FILE, "r");
+    if (!f)
+    {
+        Serial.println("[WebInterface] Failed to open connections file for reading.");
+        return;
+    }
+    while (f.available())
+    {
+        String line = f.readStringUntil('\n');
+        if (line.isEmpty())
+            continue;
+        int sep = line.indexOf(':');
+        if (sep < 0)
+            continue;
+        String addrStr = line.substring(0, sep);
+        String pinStr = line.substring(sep + 1);
+        Connection c;
+        std::istringstream ss(addrStr.c_str());
+        uint16_t v;
+        while (ss >> v)
+        {
+            c.address.push_back(v);
+            if (ss.peek() == ',')
+                ss.ignore();
+        }
+        c.pin = static_cast<uint8_t>(pinStr.toInt());
+        connections.push_back(c);
+    }
+    f.close();
+}
+
+void WebInterface::saveConnections()
+{
+    File f = LittleFS.open(CONN_FILE, "w");
+    if (!f)
+    {
+        Serial.println("[WebInterface] Failed to open connections file for writing.");
+        return;
+    }
+    for (const auto &c : connections)
+    {
+        for (size_t i = 0; i < c.address.size(); ++i)
+        {
+            f.print(c.address[i]);
+            if (i + 1 < c.address.size())
+                f.print(',');
+        }
+        f.print(':');
+        f.println(c.pin);
+    }
+    f.close();
+    Serial.println("[WebInterface] Connections saved.");
 }
 
 void WebInterface::webTask(void *param)
 {
     WebInterface *self = static_cast<WebInterface *>(param);
-
-    self->loadCredentials();
-    if (!self->wifiSSID.isEmpty() && !self->connectWiFi(self->wifiSSID, self->wifiPassword))
-    {
-        String fullSSID = String(DEFAULT_AP_SSID) + "_" + String(self->apSuffix);
-        Serial.printf("Starting AP mode: %s\n", fullSSID.c_str());
-        WiFi.softAP(fullSSID.c_str());
-    }
-
-    self->loadConnections();
-
     self->setupRoutes();
     self->server.begin();
-    Serial.printf("Web server running on port %u\n", self->serverPort);
-
+    Serial.printf("[WebInterface] Web server running on port %u\n", self->serverPort);
     while (true)
     {
         self->server.handleClient();
@@ -190,7 +279,6 @@ void WebInterface::handleWifi()
     {
         options += "<option value='" + WiFi.SSID(i) + "'>" + WiFi.SSID(i) + "</option>";
     }
-
     static const char *page = R"rawliteral(
 <!DOCTYPE html>
 <html>
@@ -206,7 +294,7 @@ void WebInterface::handleWifi()
     <form action="/wifi/connect" method="get">
       <div class="mb-3">
         <label class="form-label">SSID</label>
-        <select name="ssid" class="form-select">")rawliteral";
+        <select name="ssid" class="form-select">)rawliteral";
     String html = String(page) + options + R"rawliteral(
         </select>
       </div>
@@ -245,7 +333,6 @@ void WebInterface::handleWifiConnect()
 
 void WebInterface::handleConnections()
 {
-    // Scan available Wi-Fi networks and list them
     int n = WiFi.scanNetworks(true);
     String netList = "<ul class='list-group mb-3'>";
     for (int i = 0; i < n; ++i)
@@ -253,8 +340,6 @@ void WebInterface::handleConnections()
         netList += "<li class='list-group-item'>" + WiFi.SSID(i) + "</li>";
     }
     netList += "</ul>";
-
-    // Existing connections table rows
     String rows;
     for (auto &c : connections)
     {
@@ -271,8 +356,7 @@ void WebInterface::handleConnections()
                                 "<td><button type='button' class='btn btn-danger' onclick='removeRow(this)'>X</button></td>"
                                 "</tr>";
     }
-
-    static const char *page = R"rawliteral(
+    static const char *page2 = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
@@ -285,7 +369,7 @@ void WebInterface::handleConnections()
   <div class="container">
     <h2>Available Wi-Fi Networks</h2>
 )rawliteral";
-    String html = String(page) + netList + R"rawliteral(
+    String html2 = String(page2) + netList + R"rawliteral(
     <h2>Connections</h2>
     <form action="/connections/save" method="post">
       <table class="table">
@@ -294,7 +378,7 @@ void WebInterface::handleConnections()
         </thead>
         <tbody>
 )rawliteral" + rows +
-                  R"rawliteral(
+                   R"rawliteral(
         </tbody>
       </table>
       <button type="button" class="btn btn-secondary mb-3" onclick="addRow()">Add</button>
@@ -319,7 +403,7 @@ void WebInterface::handleConnections()
 </body>
 </html>
 )rawliteral";
-    server.send(200, "text/html", html);
+    server.send(200, "text/html", html2);
 }
 
 void WebInterface::handleConnectionsSave()
@@ -362,81 +446,9 @@ bool WebInterface::connectWiFi(const String &ssid, const String &password)
     }
     if (WiFi.status() == WL_CONNECTED)
     {
-        Serial.print("Connected to ");
-        Serial.println(ssid);
+        Serial.printf("[WebInterface] Connected to %s\n", ssid.c_str());
         return true;
     }
-    Serial.print("Failed to connect to ");
-    Serial.println(ssid);
+    Serial.printf("[WebInterface] Failed to connect to %s\n", ssid.c_str());
     return false;
-}
-
-void WebInterface::loadCredentials()
-{
-    if (LittleFS.exists(WIFI_CRED_FILE))
-    {
-        File f = LittleFS.open(WIFI_CRED_FILE, "r+");
-        wifiSSID = f.readStringUntil('\n');
-        wifiPassword = f.readStringUntil('\n');
-        f.close();
-    }
-    else
-    {
-        File f = LittleFS.open(WIFI_CRED_FILE, "w+");
-        f.close(); // Datei nur erzeugen
-    }
-}
-
-void WebInterface::saveCredentials()
-{
-    File f = LittleFS.open(WIFI_CRED_FILE, "w+");
-    f.println(wifiSSID);
-    f.println(wifiPassword);
-    f.close();
-}
-
-void WebInterface::loadConnections()
-{
-    connections.clear();
-    if (!LittleFS.exists(CONN_FILE))
-        return;
-    File f = LittleFS.open(CONN_FILE, "r+");
-    while (f.available())
-    {
-        String line = f.readStringUntil('\n');
-        int sep = line.indexOf(':');
-        if (sep < 0)
-            continue;
-        String addrStr = line.substring(0, sep);
-        String pinStr = line.substring(sep + 1);
-        Connection c;
-        std::istringstream ss(addrStr.c_str());
-        uint16_t v;
-        while (ss >> v)
-        {
-            c.address.push_back(v);
-            if (ss.peek() == ',')
-                ss.ignore();
-        }
-        c.pin = static_cast<uint8_t>(pinStr.toInt());
-        connections.push_back(c);
-    }
-    f.close();
-}
-
-void WebInterface::saveConnections()
-{
-    File f = LittleFS.open(CONN_FILE, "w+");
-    for (auto &c : connections)
-    {
-        for (size_t i = 0; i < c.address.size(); ++i)
-        {
-            f.print(c.address[i]);
-            if (i + 1 < c.address.size())
-                f.print(',');
-        }
-        f.print(':');
-        f.println(c.pin);
-    }
-    f.close();
 }
