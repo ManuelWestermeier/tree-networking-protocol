@@ -74,12 +74,19 @@ struct Node
     Connection sendConnection = connections.at(0);
 
     int bestMatchIndex = matchIndex(match(sendConnection.address, p.address));
+    int bestAdressLength = sendConnection.address.size();
 
     for (size_t i = 1; i < connections.size(); i++)
     {
       int currentMatchIndex = matchIndex(match(connections[i].address, p.address));
       if (currentMatchIndex > bestMatchIndex)
       {
+        sendConnection = connections[i];
+        bestMatchIndex = currentMatchIndex;
+      }
+      else if (currentMatchIndex == bestMatchIndex && bestAdressLength < sendConnection.address.size())
+      {
+        bestAdressLength = sendConnection.address.size();
         sendConnection = connections[i];
         bestMatchIndex = currentMatchIndex;
       }
