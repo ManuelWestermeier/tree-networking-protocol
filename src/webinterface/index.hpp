@@ -513,11 +513,11 @@ private:
               </ div>
 
                 <h4>Messages:</h4>
-              <iframe frameborder="0" src="/messages"></iframe>
+              <iframe class="container" frameborder="0" src="/messages"></iframe>
               <h4>Errors:</h4>
-              <iframe frameborder="0" src="/errors"></iframe>
+              <iframe class="container" frameborder="0" src="/errors"></iframe>
 
-              </ div>
+              </div>
 
               <script>
                   function addRow()
@@ -543,6 +543,9 @@ private:
 
         page.replace("< ", "<");
         page.replace(" >", ">");
+        page.replace("</ ", "</");
+        page.replace(" = ", "=");
+        page.replace(")\"", ") \"");
 
         page.replace("%OWN_ADDR%", ownAddrStr);
         page.replace("%CONNECTION_ROWS%", connectionRows);
