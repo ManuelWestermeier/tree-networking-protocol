@@ -14,9 +14,6 @@ Address u4;
 
 void setup()
 {
-  pinMode(2, OUTPUT);
-
-  Serial.begin(115200);
   Serial.println("User: U" + String(USER));
   if (SENDER)
   {
