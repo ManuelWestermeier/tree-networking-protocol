@@ -13,13 +13,12 @@ struct Address : public vector<uint16_t>
 
 struct Match
 {
-  int positive;
-  int negative;
+  uint16_t positive;
+  uint16_t negative;
 };
 
 Match match(const Address &connection, const Address &pocket)
 {
-  size_t maxLen = max(connection.size(), pocket.size());
   size_t minLen = min(connection.size(), pocket.size());
   Match m = {0, 0};
 
@@ -27,9 +26,14 @@ Match match(const Address &connection, const Address &pocket)
   {
     m.positive++;
   }
+  m.negative = connection.size() - m.positive;
 
-  m.negative = maxLen - m.positive;
   return m;
+}
+
+int matchIndex(const Match &m)
+{
+  return m.positive - m.negative;
 }
 
 bool eq(const Address &a1, const Address &a2)
@@ -37,7 +41,7 @@ bool eq(const Address &a1, const Address &a2)
   if (a1.size() != a2.size())
     return false;
 
-  for (int i = 0; i < a1.size(); i++)
+  for (size_t i = 0; i < a1.size(); i++)
   {
     if (a1.at(i) != a2.at(i))
       return false;
@@ -67,32 +71,17 @@ struct Node
       return 0;
     }
 
-    Match bestMatch = {0, 0};
-    vector<Connection> sendConnections;
     Connection sendConnection = connections.at(0);
 
-    for (const auto &connection : connections)
-    {
-      Match currentMatch = match(connection.address, p.address);
-      if (bestMatch.positive <= currentMatch.positive)
-      {
-        if (bestMatch.positive < currentMatch.positive)
-        {
-          sendConnections.clear();
-        }
-        bestMatch = currentMatch;
-        sendConnections.push_back(connection);
-      }
-    }
+    int bestMatchIndex = matchIndex(match(sendConnection.address, p.address));
 
-    bestMatch = match(sendConnection.address, p.address);
-    for (const auto &goodConnection : sendConnections)
+    for (size_t i = 1; i < connections.size(); i++)
     {
-      Match currentMatch = match(goodConnection.address, p.address);
-      if (currentMatch.negative <= bestMatch.negative)
+      int currentMatchIndex = matchIndex(match(connections[i].address, p.address));
+      if (currentMatchIndex > bestMatchIndex)
       {
-        sendConnection = goodConnection;
-        bestMatch = currentMatch;
+        sendConnection = connections[i];
+        bestMatchIndex = currentMatchIndex;
       }
     }
 

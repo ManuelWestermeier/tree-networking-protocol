@@ -38,6 +38,8 @@ struct PhysikalNode
   void on(Pocket p)
   {
     uint8_t sendPin = logicalNode.recieve(p);
+
+    // 0 == Selv Send
     if (sendPin == 0)
     {
       onData(p.data);
@@ -76,7 +78,7 @@ struct PhysikalNode
 
     while (true)
     {
-      for (auto conn : logicalNode.connections)
+      for (const auto &conn : logicalNode.connections)
       {
         if (digitalRead(conn.pin) == HIGH)
         {

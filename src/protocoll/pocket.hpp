@@ -33,6 +33,6 @@ struct Pocket
             sum2 = (sum2 + sum1) % 255;
         }
 
-        return (sum2 << 8) | sum1; // Combine sums into one 16-bit checksum
+        return ((sum2 << 8) | sum1) ^ address.size(); // Combine sums into one 16-bit checksum xor with the adress length
     }
 };
