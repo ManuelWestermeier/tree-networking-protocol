@@ -229,12 +229,17 @@ private:
     void handleSend()
     {
         Serial.println("[Web] handle send");
-        String rawAddress = server.arg(1);
-        String rawMsg = server.arg(0);
+        String rawAddress = server.arg("address");
+        String rawMsg = server.arg("message");
 
-        char *data = "          ";
+        // Validate inputs
+        if (rawAddress.isEmpty() || rawMsg.isEmpty())
+        {
+            server.send(400, "text/plain", "Bad request");
+            return;
+        }
+
         Address address;
-
         std::istringstream ss(rawAddress.c_str());
         uint16_t v;
         while (ss >> v)
@@ -244,17 +249,29 @@ private:
                 ss.ignore();
         }
 
-        uint8_t minLen = rawMsg.length() > 10 ? 10 : rawMsg.length();
-
-        for (uint8_t i = 0; i < minLen; i++)
+        // Ensure message is not too long
+        if (rawMsg.length() > 10)
         {
-            data[i] = rawMsg.charAt(i);
+            rawMsg = rawMsg.substring(0, 10);
         }
 
-        physikalNode.send(address, data);
+        // Send the message
+        physikalNode.send(address, rawMsg.c_str());
 
-        server.sendHeader("Location", "/connections");
-        server.send(302, "text/plain", "");
+        String html = R"(
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta http-equiv="refresh" content="2;url=/connections">
+                <title>Success</title>
+            </head>
+            <body>
+                <p>Success! Redirecting in 2 seconds...</p>
+            </body>
+            </html>
+            )";
+
+        server.send(200, "text/html", html);
     }
 
     void handleWifi()
