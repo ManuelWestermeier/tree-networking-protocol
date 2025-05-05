@@ -118,7 +118,10 @@ private:
         String addr = ip.toString();
         if (serverPort != 80)
             addr += ":" + String(serverPort);
-        return String("http://") + addr;
+        String out = String("http://") + addr;
+        if (out == "http://0.0.0.0")
+            return String("http://192.168.4.1/");
+        return out;
     }
 
     void handleRoot()
@@ -139,7 +142,7 @@ private:
     void handleWifi()
     {
         Serial.println("[Web] handleWifi: scan");
-        int n = WiFi.scanNetworks();
+        int n = WiFi.scanNetworks(true);
         String opts;
         for (int i = 0; i < n; ++i)
         {
