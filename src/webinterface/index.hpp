@@ -277,23 +277,15 @@ private:
   </div>
 </nav>
 <div class="container py-4">
-  <div class="row mb-4">
-    <div class="col-md-6">
-      <div class="card shadow-sm">
-        <div class="card-body">
-          <h3 class="card-title">Sensor Connections</h3>
-          <form action="/connections/save" method="post">
-            <table class="table">
-              <thead class="table-light"><tr><th>Address</th><th>Pin</th><th></th></tr></thead>
-              <tbody>%ROWS%</tbody>
-            </table>
-            <button type="button" onclick="addRow()" class="btn btn-outline-secondary mb-3">Add Row</button>
-            <button type="submit" class="btn btn-success">Save Changes</button>
-          </form>
-        </div>
-      </div>
-    </div>
-  </div>
+    <h3 class="card-title">Sensor Connections</h3>
+    <form action="/connections/save" method="post">
+    <table class="table">
+        <thead class="table-light"><tr><th>Address</th><th>Pin</th><th></th></tr></thead>
+        <tbody>%ROWS%</tbody>
+    </table>
+    <button type="button" onclick="addRow()" class="btn btn-outline-secondary mb-3">Add Row</button>
+    <button type="submit" class="btn btn-success">Save Changes</button>
+    </form>
 </div>
 <script>
   function addRow() {
