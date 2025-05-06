@@ -23,6 +23,8 @@ public:
 
     void begin()
     {
+        if (taskHandle != nullptr)
+            return;
         Serial.println("[Web] begin");
         Serial.println("[Web] mounting LittleFS...");
         if (!LittleFS.begin())
@@ -60,11 +62,22 @@ public:
         Serial.printf("[Web] loaded %u physikalNode.logicalNode.connections\n", physikalNode.logicalNode.connections.size());
 
         Serial.println("[Web] spawning task");
-        xTaskCreatePinnedToCore(
-            webTask, "WebServer", 8192, this, 1, nullptr, 1);
+        xTaskCreate(
+            webTask, "WebServer", 8192, this, 1, &taskHandle);
+    }
+
+    void stop()
+    {
+        if (taskHandle != nullptr)
+        {
+            Serial.println("[Protocol] stop: deleting FreeRTOS task");
+            vTaskDelete(taskHandle);
+            taskHandle = nullptr;
+        }
     }
 
 private:
+    TaskHandle_t taskHandle = nullptr;
     WebServer server;
     uint16_t serverPort;
     String wifiSSID, wifiPassword;
