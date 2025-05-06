@@ -25,6 +25,7 @@ public:
     {
         if (taskHandle != nullptr)
             return;
+
         Serial.println("[Web] begin");
         Serial.println("[Web] mounting LittleFS...");
         if (!LittleFS.begin())
@@ -74,6 +75,7 @@ public:
             vTaskDelete(taskHandle);
             taskHandle = nullptr;
         }
+        physikalNode.stop();
     }
 
 private:
@@ -97,6 +99,8 @@ private:
 
         Serial.println("[WebTask] started");
         Serial.println("Server URL: " + self->getServerURL());
+
+        self->physikalNode.start();
 
         while (true)
         {
