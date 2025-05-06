@@ -8,7 +8,6 @@
 void PhysikalNode::checkPendingAcks()
 {
     unsigned long currentTime = millis();
-    Serial.println("[Protocol] checkPendingAcks: checking for expired ACKs");
 
     for (auto it = pendingPackets.begin(); it != pendingPackets.end();)
     {
