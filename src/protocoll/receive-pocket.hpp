@@ -4,6 +4,8 @@
 
 void sendAck(uint8_t pin, uint16_t checksum)
 {
+    Serial.println("[Protocol] sendAck: sending ACK with checksum");
+
     pinMode(pin, OUTPUT);
     digitalWrite(pin, HIGH);
     delayMicroseconds(1000);
@@ -17,6 +19,8 @@ void sendAck(uint8_t pin, uint16_t checksum)
 void PhysikalNode::receivePocket(uint8_t pin)
 {
     uint8_t pocketType = readByte(pin);
+    Serial.print("[Protocol] receivePocket: pocket type = ");
+    Serial.println(pocketType);
 
     if (pocketType == NORMAL_SEND)
     {
@@ -36,12 +40,11 @@ void PhysikalNode::receivePocket(uint8_t pin)
         data[10] = '\0';
 
         uint16_t checksum = readUInt16(pin);
-
         Pocket p(address, data);
 
         if (p.checksum != checksum)
         {
-            onError(String("ERROR=") + data);
+            Serial.println("[Protocol] receivePocket: checksum mismatch");
 
             if (onError != nullptr)
             {
@@ -51,13 +54,15 @@ void PhysikalNode::receivePocket(uint8_t pin)
             return;
         }
 
+        Serial.println("[Protocol] receivePocket: checksum valid, sending ACK");
         sendAck(pin, p.checksum);
-
         on(p);
     }
     else if (pocketType == RETURN_OK)
     {
         uint16_t hash = readUInt16(pin);
+        Serial.print("[Protocol] receivePocket: received ACK for hash ");
+        Serial.println(hash);
         acknowledge(hash);
     }
 }

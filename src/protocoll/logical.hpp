@@ -28,12 +28,20 @@ Match match(const Address &connection, const Address &pocket)
   }
   m.negative = connection.size() - m.positive;
 
+  Serial.print("[Protocol] match: positive=");
+  Serial.print(m.positive);
+  Serial.print(", negative=");
+  Serial.println(m.negative);
+
   return m;
 }
 
 int matchIndex(const Match &m)
 {
-  return m.positive - m.negative;
+  int index = m.positive - m.negative;
+  Serial.print("[Protocol] matchIndex: index=");
+  Serial.println(index);
+  return index;
 }
 
 bool eq(const Address &a1, const Address &a2)
@@ -67,12 +75,13 @@ struct Node
   {
     if (connections.empty())
     {
-      Serial.println("No available connections to send data.");
+      Serial.println("[Protocol] send: no connections available");
       return 0;
     }
 
-    Connection sendConnection = connections.at(0);
+    Serial.println("[Protocol] send: selecting best connection...");
 
+    Connection sendConnection = connections.at(0);
     int bestMatchIndex = matchIndex(match(sendConnection.address, p.address));
     int bestAdressLength = sendConnection.address.size();
 
@@ -84,15 +93,15 @@ struct Node
         sendConnection = connections[i];
         bestMatchIndex = currentMatchIndex;
       }
-      else if (currentMatchIndex == bestMatchIndex && bestAdressLength < sendConnection.address.size())
+      else if (currentMatchIndex == bestMatchIndex && bestAdressLength < connections[i].address.size())
       {
-        bestAdressLength = sendConnection.address.size();
+        bestAdressLength = connections[i].address.size();
         sendConnection = connections[i];
         bestMatchIndex = currentMatchIndex;
       }
     }
 
-    Serial.print("Sending data via pin ");
+    Serial.print("[Protocol] send: sending via pin ");
     Serial.println(sendConnection.pin);
 
     return sendConnection.pin;
@@ -102,10 +111,12 @@ struct Node
   {
     if (eq(you, p.address))
     {
+      Serial.println("[Protocol] recieve: packet is for us");
       return 0;
     }
     else
     {
+      Serial.println("[Protocol] recieve: forwarding packet");
       return send(p);
     }
   }

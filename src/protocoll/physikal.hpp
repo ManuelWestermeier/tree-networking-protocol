@@ -34,43 +34,49 @@ struct PhysikalNode
 
   void sendNormalPocket(Pocket &p, uint8_t pin);
 
-  // Handles a packet once received.
   void on(Pocket p)
   {
+    Serial.println("[Protocol] on: handling received pocket");
+
     uint8_t sendPin = logicalNode.recieve(p);
 
-    // 0 == Selv Send
     if (sendPin == 0)
     {
+      Serial.println("[Protocol] on: delivering data to application layer");
       onData(p.data);
     }
     else
     {
+      Serial.print("[Protocol] on: forwarding pocket via pin ");
+      Serial.println(sendPin);
       sendNormalPocket(p, sendPin);
     }
   }
 
-  // Finds and acknowledges the pending packet based on its checksum.
   void acknowledge(uint16_t hash)
   {
+    Serial.print("[Protocol] acknowledge: checking for hash ");
+    Serial.println(hash);
+
     for (auto it = pendingPackets.begin(); it != pendingPackets.end(); ++it)
     {
       if (it->pocket.checksum == hash)
       {
+        Serial.println("[Protocol] acknowledge: match found, removing pending packet");
         pendingPackets.erase(it);
         break;
       }
     }
   }
 
-  // Checks for packets that need to be resent.
   void checkPendingAcks();
   void handlePacketRetry(PendingPacket &pending, unsigned long currentTime);
   void handlePacketFailure(vector<PendingPacket>::iterator &it, unsigned long currentTime);
 
-  // The main loop—pulses the connections and checks for incoming data or ACKs.
   void loop()
   {
+    Serial.println("[Protocol] loop: starting main loop");
+
     for (auto conn : logicalNode.connections)
     {
       pinMode(conn.pin, INPUT);
@@ -83,38 +89,36 @@ struct PhysikalNode
         if (digitalRead(conn.pin) == HIGH)
         {
           delayMicroseconds(1500);
-          // wait on bit + a half (read in the middle of the signal)
           receivePocket(conn.pin);
         }
       }
       checkPendingAcks();
-      // Yield to other tasks to avoid watchdog resets.
       vTaskDelay(pdMS_TO_TICKS(1));
     }
   }
 
-  // Starts the FreeRTOS task for handling the physical layer communications.
   void start()
   {
     if (taskHandle == nullptr)
     {
+      Serial.println("[Protocol] start: creating FreeRTOS task");
       xTaskCreate(loopTask, "PhysLoop", 4096, this, 1, &taskHandle);
     }
   }
 
-  // Stops the FreeRTOS task, if running.
   void stop()
   {
     if (taskHandle != nullptr)
     {
+      Serial.println("[Protocol] stop: deleting FreeRTOS task");
       vTaskDelete(taskHandle);
       taskHandle = nullptr;
     }
   }
 
-  // Initiates the sending of a packet with the given address and data.
   void send(Address address, const char *data)
   {
+    Serial.println("[Protocol] send: creating and sending pocket");
     on(Pocket(address, data));
   }
 };

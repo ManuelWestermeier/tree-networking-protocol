@@ -8,6 +8,7 @@
 void PhysikalNode::checkPendingAcks()
 {
     unsigned long currentTime = millis();
+    Serial.println("[Protocol] checkPendingAcks: checking for expired ACKs");
 
     for (auto it = pendingPackets.begin(); it != pendingPackets.end();)
     {
@@ -17,11 +18,15 @@ void PhysikalNode::checkPendingAcks()
         {
             if (pending.attempts < MAX_ATTEMPTS)
             {
+                Serial.print("[Protocol] checkPendingAcks: retrying packet ");
+                Serial.println(pending.pocket.checksum, HEX);
                 handlePacketRetry(pending, currentTime);
                 ++it;
             }
             else
             {
+                Serial.print("[Protocol] checkPendingAcks: packet failed too often, handling failure ");
+                Serial.println(pending.pocket.checksum, HEX);
                 handlePacketFailure(it, currentTime);
             }
         }
@@ -37,6 +42,11 @@ void PhysikalNode::handlePacketRetry(PendingPacket &pending, unsigned long curre
     pending.attempts++;
     pending.lastSendTime = currentTime;
 
+    Serial.print("[Protocol] handlePacketRetry: attempt ");
+    Serial.print(pending.attempts);
+    Serial.print(" for packet ");
+    Serial.println(pending.pocket.checksum, HEX);
+
     if (onError != nullptr)
     {
         onError("Checksum mismatch! Resending packet " +
@@ -50,6 +60,10 @@ void PhysikalNode::handlePacketRetry(PendingPacket &pending, unsigned long curre
 void PhysikalNode::handlePacketFailure(vector<PendingPacket>::iterator &it, unsigned long currentTime)
 {
     PendingPacket &pending = *it;
+
+    Serial.print("[Protocol] handlePacketFailure: packet ");
+    Serial.print(pending.pocket.checksum, HEX);
+    Serial.println(" failed, removing current connection");
 
     if (onError != nullptr)
     {
@@ -74,6 +88,9 @@ void PhysikalNode::handlePacketFailure(vector<PendingPacket>::iterator &it, unsi
     {
         uint8_t newPin = logicalNode.connections.front().pin;
 
+        Serial.print("[Protocol] handlePacketFailure: retrying on pin ");
+        Serial.println(newPin);
+
         if (onError != nullptr)
         {
             onError("Resending on new connection pin: " + String(newPin));
@@ -88,6 +105,8 @@ void PhysikalNode::handlePacketFailure(vector<PendingPacket>::iterator &it, unsi
     }
     else
     {
+        Serial.println("[Protocol] handlePacketFailure: no more connections available, dropping packet");
+
         if (onError != nullptr)
         {
             onError("No available logicalNode.connections to resend packet.");
