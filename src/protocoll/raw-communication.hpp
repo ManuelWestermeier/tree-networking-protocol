@@ -1,5 +1,7 @@
 #pragma once
 
+#define BIT_DELAY 2000
+
 #include <Arduino.h>
 
 uint8_t readByte(uint8_t pin)
@@ -8,7 +10,7 @@ uint8_t readByte(uint8_t pin)
     for (int i = 0; i < 8; i++)
     {
         value |= (digitalRead(pin) << (7 - i));
-        delayMicroseconds(1000);
+        delayMicroseconds(BIT_DELAY);
     }
     return value;
 }
@@ -25,7 +27,7 @@ void sendByte(uint8_t pin, uint8_t byte)
     for (int i = 7; i >= 0; i--)
     {
         digitalWrite(pin, (byte >> i) & 1);
-        delayMicroseconds(1000);
+        delayMicroseconds(BIT_DELAY);
     }
     digitalWrite(pin, LOW);
 }

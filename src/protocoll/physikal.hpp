@@ -6,6 +6,7 @@
 #include <freertos/task.h>
 #include <functional>
 
+#include "./raw-communication.hpp"
 #include "logical.hpp"
 #include "pending-packet.hpp"
 
@@ -88,12 +89,12 @@ struct PhysikalNode
       {
         if (digitalRead(conn.pin) == HIGH)
         {
-          delayMicroseconds(1500);
+          delayMicroseconds(BIT_DELAY * 1.4);
           receivePocket(conn.pin);
         }
       }
       checkPendingAcks();
-      vTaskDelay(pdMS_TO_TICKS(1));
+      vTaskDelay(0);
     }
   }
 
