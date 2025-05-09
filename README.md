@@ -46,6 +46,9 @@ Dieser Abschnitt erklärt den inneren Ablauf des Tree Networking Protocol (TNP) 
 4. **Empfangsfall**  
    - Wenn die Zieladresse mit der eigenen Adresse des Knotens übereinstimmt, wird nicht weitergeleitet, sondern die Verarbeitung endet mit dem Rückgabewert 0.
 
+5. **Loadbalancing**
+   - Wenn es zwei "gleich gute" (Matchindex equivalente indexe) gibt, wird die Lösung, mit der kleineren Adress-Länge ausgewählt.
+
 ---
 
 ## Zusammenfassung
