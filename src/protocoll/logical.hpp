@@ -58,6 +58,20 @@ bool eq(const Address &a1, const Address &a2)
   return true;
 }
 
+bool isChildren(const Address &other, const Address &you)
+{
+  if (other.size() <= you.size())
+    return false;
+
+  for (size_t i = 0; i < you.size(); i++)
+  {
+    if (other.at(i) != you.at(i))
+      return false;
+  }
+
+  return true;
+}
+
 struct Connection
 {
   Address address;
@@ -85,9 +99,12 @@ struct Node
     int bestMatchIndex = matchIndex(match(sendConnection.address, p.address));
     int bestAdressLength = sendConnection.address.size();
 
+    bool isDirectChildren = isChildren(p.address, you);
+
     for (size_t i = 1; i < connections.size(); i++)
     {
       int currentMatchIndex = matchIndex(match(connections[i].address, p.address));
+
       if (currentMatchIndex > bestMatchIndex)
       {
         sendConnection = connections[i];
@@ -99,6 +116,11 @@ struct Node
         sendConnection = connections[i];
         bestMatchIndex = currentMatchIndex;
       }
+    }
+
+    if (isDirectChildren && !isChildren(sendConnection.address, you))
+    {
+      return -1;
     }
 
     Serial.print("[Protocol] send: sending via pin ");

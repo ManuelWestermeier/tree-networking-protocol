@@ -46,6 +46,11 @@ struct PhysikalNode
       Serial.println("[Protocol] on: delivering data to application layer");
       onData(p.data);
     }
+    else if (sendPin == -1)
+    {
+      Serial.println("[Protocol] on: pocket cannot reach destination");
+      onError("pocket cannot reach destination");
+    }
     else
     {
       Serial.print("[Protocol] on: forwarding pocket via pin ");
