@@ -9,8 +9,17 @@ struct Pocket
 
     Pocket(Address a, const char *d) : address(a)
     {
-        strncpy(data, d, 10);
+        // Fill with spaces first
+        memset(data, ' ', 10);
+
+        // Copy up to 10 characters from d
+        size_t len = strlen(d);
+        size_t copyLen = len > 10 ? 10 : len;
+        memcpy(data, d, copyLen);
+
+        // Null-terminate only if there's room (optional depending on expected use)
         data[10] = '\0';
+
         checksum = calculateChecksum();
     }
 
