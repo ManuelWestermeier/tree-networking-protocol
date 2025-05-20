@@ -120,7 +120,7 @@ struct Node
 
     if (isDirectChildren && !isChildren(sendConnection.address, you))
     {
-      return -1;
+      return 0;
     }
 
     Serial.print("[Protocol] send: sending via pin ");
