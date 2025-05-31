@@ -12,6 +12,7 @@
 
 #define NORMAL_SEND 1
 #define RETURN_OK 2
+
 #define RESEND_TIMEOUT 5000 // milliseconds
 #define MAX_ATTEMPTS 50
 
