@@ -1,0 +1,1472 @@
+
+//filepath: src\main.cpp
+#include <Arduino.h>
+
+#include "webinterface/index.hpp"
+
+WebInterface web(80);
+
+void setup()
+{
+  Serial.begin(115200);
+  web.begin();
+}
+
+void loop()
+{
+  vTaskDelay(pdMS_TO_TICKS(1000));
+}
+
+//filepath: src\protocoll\check-pending-acks.hpp
+#pragma once
+
+#include "./physikal.hpp"
+#include "./pending-packet.hpp"
+
+#include <algorithm>
+
+void PhysikalNode::checkPendingAcks()
+{
+    unsigned long currentTime = millis();
+
+    for (auto it = pendingPackets.begin(); it != pendingPackets.end();)
+    {
+        PendingPacket &pending = *it;
+
+        if (currentTime - pending.lastSendTime > RESEND_TIMEOUT)
+        {
+            if (pending.attempts < MAX_ATTEMPTS)
+            {
+                Serial.print("[Protocol] checkPendingAcks: retrying packet ");
+                Serial.println(pending.pocket.checksum, HEX);
+                handlePacketRetry(pending, currentTime);
+                ++it;
+            }
+            else
+            {
+                Serial.print("[Protocol] checkPendingAcks: packet failed too often, handling failure ");
+                Serial.println(pending.pocket.checksum, HEX);
+                handlePacketFailure(it, currentTime);
+            }
+        }
+        else
+        {
+            ++it;
+        }
+    }
+}
+
+void PhysikalNode::handlePacketRetry(PendingPacket &pending, unsigned long currentTime)
+{
+    pending.attempts++;
+    pending.lastSendTime = currentTime;
+
+    Serial.print("[Protocol] handlePacketRetry: attempt ");
+    Serial.print(pending.attempts);
+    Serial.print(" for packet ");
+    Serial.println(pending.pocket.checksum, HEX);
+
+    if (onError != nullptr)
+    {
+        onError("Checksum mismatch! Resending packet " +
+                String(pending.pocket.checksum, HEX) +
+                " attempt " + String(pending.attempts));
+    }
+
+    sendNormalPocket(pending.pocket, pending.sendPin);
+}
+
+void PhysikalNode::handlePacketFailure(vector<PendingPacket>::iterator &it, unsigned long currentTime)
+{
+    PendingPacket &pending = *it;
+
+    Serial.print("[Protocol] handlePacketFailure: packet ");
+    Serial.print(pending.pocket.checksum, HEX);
+    Serial.println(" failed, removing current connection");
+
+    if (onError != nullptr)
+    {
+        onError("Packet " + String(pending.pocket.checksum, HEX) +
+                " failed 3 times. Removing connection and retrying on a new pin.");
+    }
+
+    uint8_t failedPin = pending.sendPin;
+
+    auto connIt = std::find_if(
+        logicalNode.connections.begin(),
+        logicalNode.connections.end(),
+        [failedPin](const Connection &conn)
+        { return conn.pin == failedPin; });
+
+    if (connIt != logicalNode.connections.end())
+    {
+        logicalNode.connections.erase(connIt);
+    }
+
+    if (!logicalNode.connections.empty())
+    {
+        uint8_t newPin = logicalNode.connections.front().pin;
+
+        Serial.print("[Protocol] handlePacketFailure: retrying on pin ");
+        Serial.println(newPin);
+
+        if (onError != nullptr)
+        {
+            onError("Resending on new connection pin: " + String(newPin));
+        }
+
+        pending.sendPin = newPin;
+        pending.attempts = 1;
+        pending.lastSendTime = currentTime;
+
+        sendNormalPocket(pending.pocket, newPin);
+        ++it;
+    }
+    else
+    {
+        Serial.println("[Protocol] handlePacketFailure: no more connections available, dropping packet");
+
+        if (onError != nullptr)
+        {
+            onError("No available logicalNode.connections to resend packet.");
+        }
+
+        it = pendingPackets.erase(it);
+    }
+}
+
+
+//filepath: src\protocoll\index.hpp
+#pragma once
+
+#include "./logical.hpp"
+#include "./physikal.hpp"
+
+//filepath: src\protocoll\logical.hpp
+#pragma once
+
+#include <Arduino.h>
+#include <vector>
+#include <algorithm>
+#include <string.h>
+
+using namespace std;
+
+struct Address : public vector<uint16_t>
+{
+};
+
+struct Match
+{
+  uint16_t positive;
+  uint16_t negative;
+};
+
+Match match(const Address &connection, const Address &pocket)
+{
+  size_t minLen = min(connection.size(), pocket.size());
+  Match m = {0, 0};
+
+  while (m.positive < minLen && connection[m.positive] == pocket[m.positive])
+  {
+    m.positive++;
+  }
+  m.negative = connection.size() - m.positive;
+
+  Serial.print("[Protocol] match: positive=");
+  Serial.print(m.positive);
+  Serial.print(", negative=");
+  Serial.println(m.negative);
+
+  return m;
+}
+
+int matchIndex(const Match &m)
+{
+  int index = m.positive - m.negative;
+  Serial.print("[Protocol] matchIndex: index=");
+  Serial.println(index);
+  return index;
+}
+
+bool eq(const Address &a1, const Address &a2)
+{
+  if (a1.size() != a2.size())
+    return false;
+
+  for (size_t i = 0; i < a1.size(); i++)
+  {
+    if (a1.at(i) != a2.at(i))
+      return false;
+  }
+
+  return true;
+}
+
+bool isChildren(const Address &other, const Address &you)
+{
+  if (other.size() <= you.size())
+    return false;
+
+  for (size_t i = 0; i < you.size(); i++)
+  {
+    if (other.at(i) != you.at(i))
+      return false;
+  }
+
+  return true;
+}
+
+struct Connection
+{
+  Address address;
+  uint8_t pin;
+};
+
+#include "./pocket.hpp"
+
+struct Node
+{
+  vector<Connection> connections;
+  Address you;
+
+  uint8_t send(Pocket p)
+  {
+    if (connections.empty())
+    {
+      Serial.println("[Protocol] send: no connections available");
+      return 0;
+    }
+
+    Serial.println("[Protocol] send: selecting best connection...");
+
+    Connection sendConnection = connections.at(0);
+    int bestMatchIndex = matchIndex(match(sendConnection.address, p.address));
+    int bestAdressLength = sendConnection.address.size();
+
+    bool isDirectChildren = isChildren(p.address, you);
+
+    for (size_t i = 1; i < connections.size(); i++)
+    {
+      int currentMatchIndex = matchIndex(match(connections[i].address, p.address));
+
+      if (currentMatchIndex > bestMatchIndex)
+      {
+        sendConnection = connections[i];
+        bestMatchIndex = currentMatchIndex;
+      }
+      else if (currentMatchIndex == bestMatchIndex && bestAdressLength < connections[i].address.size())
+      {
+        bestAdressLength = connections[i].address.size();
+        sendConnection = connections[i];
+        bestMatchIndex = currentMatchIndex;
+      }
+    }
+
+    if (isDirectChildren && !isChildren(sendConnection.address, you))
+    {
+      return 0;
+    }
+
+    Serial.print("[Protocol] send: sending via pin ");
+    Serial.println(sendConnection.pin);
+
+    return sendConnection.pin;
+  }
+
+  uint8_t recieve(Pocket p)
+  {
+    if (eq(you, p.address))
+    {
+      Serial.println("[Protocol] recieve: packet is for us");
+      return 0;
+    }
+    else
+    {
+      Serial.println("[Protocol] recieve: forwarding packet");
+      return send(p);
+    }
+  }
+};
+
+
+//filepath: src\protocoll\pending-packet.hpp
+#pragma once
+
+#include <Arduino.h>
+#include "./logical.hpp"
+
+struct PendingPacket
+{
+    Pocket pocket;
+    uint8_t sendPin;
+    uint8_t attempts;
+    unsigned long lastSendTime; // in milliseconds
+
+    PendingPacket(const Pocket &p, uint8_t pin, uint8_t att, unsigned long time)
+        : pocket(p), sendPin(pin), attempts(att), lastSendTime(time) {}
+};
+
+//filepath: src\protocoll\physikal.hpp
+#pragma once
+
+#include <Arduino.h>
+#include <vector>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
+#include <functional>
+
+#include "./raw-communication.hpp"
+#include "logical.hpp"
+#include "pending-packet.hpp"
+
+#define NORMAL_SEND 1
+#define RETURN_OK 2
+
+#define RESEND_TIMEOUT 5000 // milliseconds
+#define MAX_ATTEMPTS 50
+
+using std::vector;
+
+struct PhysikalNode
+{
+  Node logicalNode;
+  TaskHandle_t taskHandle = nullptr;
+  vector<PendingPacket> pendingPackets;
+
+  std::function<void(const char *data)> onData = nullptr;
+  std::function<void(String)> onError = nullptr;
+
+  static void loopTask(void *params)
+  {
+    static_cast<PhysikalNode *>(params)->loop();
+  }
+
+  void receivePocket(uint8_t pin);
+
+  void sendNormalPocket(Pocket &p, uint8_t pin);
+
+  void on(Pocket p)
+  {
+    Serial.println("[Protocol] on: handling received pocket");
+
+    uint8_t sendPin = logicalNode.recieve(p);
+
+    if (sendPin == 0)
+    {
+      Serial.println("[Protocol] on: delivering data to application layer");
+      onData(p.data);
+    }
+    else if (sendPin == -1)
+    {
+      Serial.println("[Protocol] on: pocket cannot reach destination");
+      onError("pocket cannot reach destination");
+    }
+    else
+    {
+      Serial.print("[Protocol] on: forwarding pocket via pin ");
+      Serial.println(sendPin);
+      sendNormalPocket(p, sendPin);
+    }
+  }
+
+  void acknowledge(uint16_t hash)
+  {
+    Serial.print("[Protocol] acknowledge: checking for hash ");
+    Serial.println(hash);
+
+    for (auto it = pendingPackets.begin(); it != pendingPackets.end(); ++it)
+    {
+      if (it->pocket.checksum == hash)
+      {
+        Serial.println("[Protocol] acknowledge: match found, removing pending packet");
+        pendingPackets.erase(it);
+        break;
+      }
+    }
+  }
+
+  void checkPendingAcks();
+  void handlePacketRetry(PendingPacket &pending, unsigned long currentTime);
+  void handlePacketFailure(vector<PendingPacket>::iterator &it, unsigned long currentTime);
+
+  void loop()
+  {
+    Serial.println("[Protocol] loop: starting main loop");
+
+    for (auto conn : logicalNode.connections)
+    {
+      pinMode(conn.pin, INPUT);
+    }
+
+    while (true)
+    {
+      for (const auto &conn : logicalNode.connections)
+      {
+        if (digitalRead(conn.pin) == HIGH)
+        {
+          delayMicroseconds(BIT_DELAY * 1.4);
+          receivePocket(conn.pin);
+        }
+      }
+      checkPendingAcks();
+      vTaskDelay(0);
+    }
+  }
+
+  void start()
+  {
+    if (taskHandle == nullptr)
+    {
+      Serial.println("[Protocol] start: creating FreeRTOS task");
+      xTaskCreate(loopTask, "PhysLoop", 4096, this, 1, &taskHandle);
+    }
+  }
+
+  void stop()
+  {
+    if (taskHandle != nullptr)
+    {
+      Serial.println("[Protocol] stop: deleting FreeRTOS task");
+      vTaskDelete(taskHandle);
+      taskHandle = nullptr;
+    }
+  }
+
+  void send(Address address, const char *data)
+  {
+    Serial.println("[Protocol] send: creating and sending pocket");
+    on(Pocket(address, data));
+  }
+};
+
+#include "./raw-communication.hpp"
+#include "./check-pending-acks.hpp"
+#include "./receive-pocket.hpp"
+#include "./send-normal-pocket.hpp"
+
+
+//filepath: src\protocoll\pocket.hpp
+#pragma once
+#include <cstring>
+
+struct Pocket
+{
+    Address address;
+    char data[11];
+    uint16_t checksum;
+
+    Pocket(Address a, const char *d) : address(a)
+    {
+        // Fill with spaces first
+        memset(data, ' ', 10);
+
+        // Copy up to 10 characters from d
+        size_t len = strlen(d);
+        size_t copyLen = len > 10 ? 10 : len;
+        memcpy(data, d, copyLen);
+
+        // Null-terminate only if there's room (optional depending on expected use)
+        data[10] = '\0';
+
+        checksum = calculateChecksum();
+    }
+
+    uint16_t calculateChecksum() const
+    {
+        uint16_t sum1 = 0;
+        uint16_t sum2 = 0;
+
+        // Add address parts
+        for (uint16_t part : address)
+        {
+            sum1 = (sum1 + part) % 255;
+            sum2 = (sum2 + sum1) % 255;
+        }
+
+        // Add data bytes
+        for (int i = 0; i < 10; i++)
+        {
+            sum1 = (sum1 + static_cast<uint8_t>(data[i])) % 255;
+            sum2 = (sum2 + sum1) % 255;
+        }
+
+        return ((sum2 << 8) | sum1) ^ address.size(); // Combine sums into one 16-bit checksum xor with the adress length
+    }
+};
+
+
+//filepath: src\protocoll\raw-communication.hpp
+#pragma once
+
+#define BIT_DELAY 50000
+
+#include <Arduino.h>
+
+uint8_t readByte(uint8_t pin)
+{
+    uint8_t value = 0;
+    for (int i = 0; i < 8; i++)
+    {
+        value |= (digitalRead(pin) << (7 - i));
+        delayMicroseconds(BIT_DELAY);
+    }
+    return value;
+}
+
+uint16_t readUInt16(uint8_t pin)
+{
+    uint8_t low = readByte(pin);
+    uint8_t high = readByte(pin);
+    return (high << 8) | low;
+}
+
+void sendByte(uint8_t pin, uint8_t byte)
+{
+    for (int i = 7; i >= 0; i--)
+    {
+        digitalWrite(pin, (byte >> i) & 1);
+        delayMicroseconds(BIT_DELAY);
+    }
+    digitalWrite(pin, LOW);
+}
+
+void sendUInt16(uint8_t pin, uint16_t val)
+{
+    sendByte(pin, val & 0xFF);
+    sendByte(pin, val >> 8);
+}
+
+//filepath: src\protocoll\receive-pocket.hpp
+#pragma once
+
+#include "./physikal.hpp"
+
+void sendAck(uint8_t pin, uint16_t checksum)
+{
+    Serial.println("[Protocol] sendAck: sending ACK with checksum");
+
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, HIGH);
+    delayMicroseconds(1000);
+
+    sendByte(pin, RETURN_OK);
+    sendUInt16(pin, checksum);
+
+    pinMode(pin, INPUT);
+}
+
+void PhysikalNode::receivePocket(uint8_t pin)
+{
+    uint8_t pocketType = readByte(pin);
+    Serial.print("[Protocol] receivePocket: pocket type = ");
+    Serial.println(pocketType);
+
+    if (pocketType == NORMAL_SEND)
+    {
+        uint16_t addrSize = readUInt16(pin);
+        Address address;
+        address.reserve(addrSize);
+        for (int i = 0; i < addrSize; i++)
+        {
+            address.push_back(readUInt16(pin));
+        }
+
+        char data[11];
+        for (int i = 0; i < 10; i++)
+        {
+            data[i] = readByte(pin);
+        }
+        data[10] = '\0';
+
+        uint16_t checksum = readUInt16(pin);
+        Pocket p(address, data);
+
+        if (p.checksum != checksum)
+        {
+            Serial.println("[Protocol] receivePocket: checksum mismatch");
+
+            if (onError != nullptr)
+            {
+                onError("Checksum mismatch! Data:");
+                onError(data);
+            }
+            return;
+        }
+
+        Serial.println("[Protocol] receivePocket: checksum valid, sending ACK");
+        sendAck(pin, p.checksum);
+        on(p);
+    }
+    else if (pocketType == RETURN_OK)
+    {
+        uint16_t hash = readUInt16(pin);
+        Serial.print("[Protocol] receivePocket: received ACK for hash ");
+        Serial.println(hash);
+        acknowledge(hash);
+    }
+}
+
+
+//filepath: src\protocoll\send-normal-pocket.hpp
+#pragma once
+
+#include "./physikal.hpp"
+
+void PhysikalNode::sendNormalPocket(Pocket &p, uint8_t pin)
+{
+    Serial.print("[Protocol] sendNormalPocket: sending on pin ");
+    Serial.println(pin);
+
+    pinMode(pin, OUTPUT);
+    digitalWrite(pin, HIGH);
+    delayMicroseconds(1000);
+
+    sendByte(pin, NORMAL_SEND);
+    sendUInt16(pin, p.address.size());
+    for (auto a : p.address)
+    {
+        sendUInt16(pin, a);
+    }
+    for (int i = 0; i < 10; i++)
+    {
+        sendByte(pin, p.data[i]);
+    }
+
+    sendUInt16(pin, p.checksum);
+
+    pinMode(pin, INPUT); // Switch back to receive mode
+
+    for (auto &pending : pendingPackets)
+    {
+        if (pending.pocket.checksum == p.checksum)
+        {
+            Serial.println("[Protocol] sendNormalPocket: packet already pending, not adding again.");
+            return;
+        }
+    }
+
+    Serial.print("[Protocol] sendNormalPocket: queued packet with checksum ");
+    Serial.println(p.checksum, HEX);
+
+    pendingPackets.push_back(PendingPacket(p, pin, 1, millis()));
+}
+
+
+//filepath: src\webinterface\index.hpp
+#pragma once
+
+#include <Arduino.h>
+#include <esp_system.h>
+#include <WiFi.h>
+#include <WebServer.h>
+#include <LittleFS.h>
+#include <vector>
+#include <sstream>
+#include "../protocoll/index.hpp"
+
+#define WIFI_CRED_FILE "/wifi.txt"
+#define CONN_FILE "/connections.txt"
+#define AP_SUFFIX_FILE "/apsuffix.txt"
+#define DEFAULT_AP_SSID "NodeAP"
+#define WIFI_CONNECT_TIMEOUT_MS 10000
+
+class WebInterface
+{
+public:
+    explicit WebInterface(uint16_t port = 80)
+        : server(port), serverPort(port), apSuffix(0) {}
+
+    void begin()
+    {
+        if (taskHandle != nullptr)
+            return;
+
+        Serial.println("[Web] begin");
+        Serial.println("[Web] mounting LittleFS...");
+        if (!LittleFS.begin())
+        {
+            Serial.println("[Web] mount failed, formatting...");
+            if (!LittleFS.format() || !LittleFS.begin())
+            {
+                Serial.println("[Web] FS init failed");
+                return;
+            }
+        }
+        Serial.println("[Web] FS ready");
+
+        loadAPSuffix();
+        loadCredentials();
+
+        Serial.printf("[Web] creds SSID='%s' passlen=%u\n", wifiSSID.c_str(), wifiPassword.length());
+        bool ok = false;
+        if (!wifiSSID.isEmpty())
+        {
+            Serial.println("[Web] connect STA");
+            WiFi.mode(WIFI_STA);
+            ok = connectWiFi(wifiSSID, wifiPassword);
+        }
+        if (!ok)
+        {
+            Serial.println("[Web] start AP");
+            WiFi.mode(WIFI_AP_STA);
+            String ss = String(DEFAULT_AP_SSID) + "_" + apSuffix;
+            Serial.printf("[Web] AP SSID=%s\n", ss.c_str());
+            WiFi.softAP(ss.c_str());
+        }
+
+        loadConnections();
+        Serial.printf("[Web] loaded %u physikalNode.logicalNode.connections\n", physikalNode.logicalNode.connections.size());
+
+        Serial.println("[Web] spawning task");
+        xTaskCreate(
+            webTask, "WebServer", 8192, this, 1, &taskHandle);
+    }
+
+    void stop()
+    {
+        if (taskHandle != nullptr)
+        {
+            Serial.println("[Protocol] stop: deleting FreeRTOS task");
+            vTaskDelete(taskHandle);
+            taskHandle = nullptr;
+        }
+        physikalNode.stop();
+    }
+
+private:
+    TaskHandle_t taskHandle = nullptr;
+    WebServer server;
+    uint16_t serverPort;
+    String wifiSSID, wifiPassword;
+    uint16_t apSuffix;
+    PhysikalNode physikalNode;
+    vector<String> messages;
+    vector<String> errors;
+
+    static void webTask(void *p)
+    {
+        auto *self = static_cast<WebInterface *>(p);
+        Serial.println("[WebTask] setupRoutes");
+        self->setupRoutes();
+        Serial.println("[WebTask] server.begin");
+        self->server.begin();
+        Serial.printf("[WebTask] running on port %u\n", self->serverPort);
+
+        Serial.println("[WebTask] started");
+        Serial.println("Server URL: " + self->getServerURL());
+
+        self->physikalNode.start();
+
+        while (true)
+        {
+            self->server.handleClient();
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+    }
+
+    void setupRoutes()
+    {
+        physikalNode.onData = [&](String data)
+        {
+            messages.push_back(data);
+        };
+        physikalNode.onError = [&](String error)
+        {
+            errors.push_back(error);
+        };
+
+        server.on("/", HTTP_GET, [&]()
+                  { handleRoot(); });
+        server.on("/send", HTTP_POST, [&]()
+                  { handleSend(); });
+        server.on("/wifi", HTTP_GET, [&]()
+                  { handleWifi(); });
+        server.on("/wifi/connect", HTTP_GET, [&]()
+                  { handleWifiConnect(); });
+        server.on("/connections", HTTP_GET, [&]()
+                  { handleConnections(); });
+        server.on("/connections/save", HTTP_POST, [&]()
+                  { handleConnectionsSave(); });
+        server.on("/messages", HTTP_GET, [&]() { //
+            String msgs = messages.size() == 0 ? "NO MESSAGES YET" : "";
+
+            for (const auto &message : messages)
+                msgs += "> " + message + "\n";
+
+            server.send(200, "text/plain", msgs.c_str());
+        });
+        server.on("/errors", HTTP_GET, [&]() { //
+            String messages = errors.size() == 0 ? "NO ERRORS YET" : "";
+
+            for (const auto &error : errors)
+                messages += "> " + error + "\n";
+
+            server.send(200, "text/plain", messages.c_str());
+        });
+        server.onNotFound([&]()
+                          { server.send(404, "text/plain", "Not Found"); });
+
+        server.on("/favicon.ico", HTTP_GET, [&]()
+                  { server.send(204, "text/plain", ""); });
+    }
+
+    // Helper to build server URL
+    String getServerURL()
+    {
+        IPAddress ip = WiFi.localIP();
+        String addr = ip.toString();
+        if (serverPort != 80)
+            addr += ":" + String(serverPort);
+        String out = String("http://") + addr;
+        if (out == "http://0.0.0.0")
+            return String("http://192.168.4.1/");
+        return out;
+    }
+
+    void handleConnectionsSave()
+    {
+        Serial.println("[Web] handleConnectionsSave");
+        String ownAddr;
+        std::vector<String> addrs, pins;
+
+        // Process parameters
+        for (int i = 0; i < server.args(); ++i)
+        {
+            if (server.argName(i) == "ownAddr")
+            {
+                ownAddr = server.arg(i);
+            }
+            else if (server.argName(i) == "address[]")
+            {
+                addrs.push_back(server.arg(i));
+            }
+            else if (server.argName(i) == "pin[]")
+            {
+                pins.push_back(server.arg(i));
+            }
+        }
+
+        // Update Own Address
+        if (!ownAddr.isEmpty())
+        {
+            Address newAddr;
+            std::istringstream ss(ownAddr.c_str());
+            uint16_t v;
+            while (ss >> v)
+            {
+                newAddr.push_back(v);
+                if (ss.peek() == ',')
+                    ss.ignore();
+            }
+            physikalNode.logicalNode.you = newAddr;
+        }
+
+        // Update Connections
+        physikalNode.logicalNode.connections.clear();
+        for (size_t i = 0; i < addrs.size() && i < pins.size(); ++i)
+        {
+            Connection c;
+            std::istringstream ss(addrs[i].c_str());
+            uint16_t v;
+            while (ss >> v)
+            {
+                c.address.push_back(v);
+                if (ss.peek() == ',')
+                    ss.ignore();
+            }
+            c.pin = uint8_t(pins[i].toInt());
+            physikalNode.logicalNode.connections.push_back(c);
+        }
+
+        saveConnections();
+        server.sendHeader("Location", "/connections");
+        server.send(302, "text/plain", "");
+    }
+
+    void handleRoot()
+    {
+        Serial.println("[Web] handleRoot");
+        if (WiFi.status() == WL_CONNECTED)
+        {
+            server.sendHeader("Location", "/connections");
+            server.send(302, "text/plain", "");
+        }
+        else
+        {
+            server.sendHeader("Location", "/wifi");
+            server.send(302, "text/plain", "");
+        }
+    }
+
+    void handleSend()
+    {
+        Serial.println("[Web] handle send");
+        String rawAddress = server.arg("address");
+        String rawMsg = server.arg("message");
+
+        // Validate inputs
+        if (rawAddress.isEmpty() || rawMsg.isEmpty())
+        {
+            server.send(400, "text/plain", "Bad request");
+            return;
+        }
+
+        Address address;
+        std::istringstream ss(rawAddress.c_str());
+        uint16_t v;
+        while (ss >> v)
+        {
+            address.push_back(v);
+            if (ss.peek() == ',')
+                ss.ignore();
+        }
+
+        // Ensure message is not too long
+        if (rawMsg.length() > 10)
+        {
+            rawMsg = rawMsg.substring(0, 10);
+        }
+
+        // Send the message
+        physikalNode.send(address, rawMsg.c_str());
+
+        String html = R"(
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <meta http-equiv="refresh" content="2;url=/connections">
+                <title>Success</title>
+            </head>
+            <body>
+                <p>Success! Redirecting in 2 seconds...</p>
+            </body>
+            </html>
+            )";
+
+        server.send(200, "text/html", html);
+    }
+
+    void handleWifi()
+    {
+        Serial.println("[Web] handleWifi: scan");
+        int n = WiFi.scanNetworks();
+        String opts;
+        for (int i = 0; i < n; ++i)
+        {
+            opts += "<option value='" + WiFi.SSID(i) + "'>" + WiFi.SSID(i) + "</option>";
+        }
+        String page = R"rawl(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Wi-Fi Setup</title>
+  <style>
+    body { font-family: sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+    .navbar { background: #007bff; padding: 1em; color: white; display: flex; justify-content: space-between; }
+    .container { padding: 2em; max-width: 600px; margin: auto; }
+    .card { background: white; border-radius: 8px; padding: 1.5em; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    label { display: block; margin-top: 1em; }
+    input, select { width: 100%; padding: 0.5em; margin-top: 0.5em; }
+    button { margin-top: 1.5em; padding: 0.7em 1.5em; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #218838; }
+  </style>
+</head>
+<body>
+  <div class="navbar">
+    <div>Node Web UI</div>
+    <div>%SERVER_URL%</div>
+  </div>
+  <div class="container">
+    <div class="card">
+      <h2>Connect to Wi-Fi</h2>
+      <form action="/wifi/connect" method="get">
+        <label>SSID</label>
+        <select name="ssid">%OPTIONS%</select>
+        <label>Password</label>
+        <input type="password" name="pass" required>
+        <button type="submit">Connect</button>
+      </form>
+    </div>
+  </div>
+</body>
+</html>
+)rawl";
+        page.replace("%OPTIONS%", opts);
+        page.replace("%SERVER_URL%", getServerURL());
+        server.send(200, "text/html", page);
+    }
+
+    void handleWifiConnect()
+    {
+        Serial.println("[Web] handleWifiConnect");
+        String ssid = server.arg("ssid");
+        String pass = server.arg("pass");
+        if (connectWiFi(ssid, pass))
+        {
+            wifiSSID = ssid;
+            wifiPassword = pass;
+            saveCredentials();
+            server.sendHeader("Location", "/connections");
+            server.send(302, "text/plain", "");
+        }
+        else
+        {
+            server.send(200, "text/html", R"rawf(
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+<title>Connection Failed</title>
+  <style>
+    body { font-family: sans-serif; background: #f4f6f8; margin: 0; padding: 0; }
+    .navbar { background: #007bff; padding: 1em; color: white; display: flex; justify-content: space-between; }
+    .container { padding: 2em; max-width: 600px; margin: auto; }
+    .card { background: white; border-radius: 8px; padding: 1.5em; box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    label { display: block; margin-top: 1em; }
+    input, select { width: 100%; padding: 0.5em; margin-top: 0.5em; }
+    button { margin-top: 1.5em; padding: 0.7em 1.5em; background: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    button:hover { background: #218838; }
+  </style>
+</head>
+<body class="bg-light p-4">
+<div class="alert alert-danger">Failed to connect to Wi-Fi. <a href="/wifi" class="alert-link">Try again</a>.</div>
+</body>
+</html>
+)rawf");
+        }
+    }
+
+    void handleConnections()
+    {
+        Serial.println("[Web] handleConnections: scan");
+
+        // Build Own Address section
+        String ownAddrStr;
+        for (size_t i = 0; i < physikalNode.logicalNode.you.size(); ++i)
+        {
+            ownAddrStr += String(physikalNode.logicalNode.you[i]);
+            if (i + 1 < physikalNode.logicalNode.you.size())
+            {
+                ownAddrStr += ",";
+            }
+        }
+
+        // Build connection rows
+        String connectionRows;
+        for (auto &c : physikalNode.logicalNode.connections)
+        {
+            String a;
+            for (size_t i = 0; i < c.address.size(); ++i)
+            {
+                a += String(c.address[i]);
+                if (i + 1 < c.address.size())
+                {
+                    a += ",";
+                }
+            }
+            connectionRows += R"(
+                <tr>
+                    <td><input name='address[]' value=')" +
+                              a + R"(' class='form-input'></td>
+                    <td><input type='number' name='pin[]' value=')" +
+                              String(c.pin) + R"(' class='form-input'></td>
+                    <td><button type='button' onclick='removeRow(this)' class='btn-danger btn'>Remove</button></td>
+                </tr>)";
+        }
+
+        String page = R"(
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Node Configuration</title>
+    <style>
+        :root {
+            --primary: #007bff;
+            --success: #28a745;
+            --danger: #dc3545;
+            --background: #f8f9fa;
+            --card-bg: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            margin: 0;
+            padding: 0;
+            background-color: var(--background);
+        }
+        
+        .navbar {
+            background-color: var(--primary);
+            color: white;
+            padding: 1rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .container {
+            max-width: 800px;
+            margin: 2rem auto;
+            padding: 0 1rem;
+        }
+        
+        .config-card {
+            background: var(--card-bg);
+            border-radius: 8px;
+            padding: 2rem;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+        }
+        
+        .form-label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 500;
+        }
+        
+        .form-input {
+            width: 100%;
+            padding: 0.5rem;
+            border: 1px solid #ced4da;
+            border-radius: 4px;
+            box-sizing: border-box;
+        }
+        
+        .btn {
+            padding: 0.5rem 1rem;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: 500;
+        }
+        
+        .btn-success {
+            background-color: var(--success);
+            color: white;
+        }
+        
+        .btn-danger {
+            background-color: var(--danger);
+            color: white;
+        }
+        
+        .btn-outline {
+            background: transparent;
+            border: 1px solid #ced4da;
+            color: #495057;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1.5rem 0;
+        }
+        
+        th, td {
+            padding: 0.75rem;
+            text-align: left;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        th {
+            background-color: var(--background);
+            font-weight: 500;
+        }
+        
+        .help-text {
+            color: #6c757d;
+            font-size: 0.9rem;
+            margin-top: 0.5rem;
+        }
+
+        iframe {
+            width: 100%;
+            height: 30dvh;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar">
+        <div>Node Configuration</div>
+        <div>
+            <a href="/wifi">Wifi</a>
+        </div>
+        <div>%SERVER_URL%</div>
+    </nav>
+    
+    <div class="container">
+        <div class="config-card">
+        <form action="/send" method="post">
+          <div class="form-group">
+                    <label class="form-label">Destination Address</label>
+                    <input type="text" name="address" value="" placeholder="x,x,x,..." class="form-input">
+                    <div class="help-text">
+                        Enter node's address as comma-separated numbers (e.g., "1,2,3") not (e.g., "1,02,3") not (e.g., " 1, 2,3")<br>
+                        Each number represents a level in the network hierarchy
+                    </div>
+                    <br>
+                    <input style="margin-bottom: 5px;" type="text" name="message" placeholder="text...max 10 chars" class="form-input">
+                    <br>
+                    <button type="submit" class="btn btn-outline">Send Message (Max 10 Chars)</button>
+                </div>
+        </form>
+            <form action="/connections/save" method="post">
+                <div class="form-group">
+                    <label class="form-label">Own Address</label>
+                    <input type="text" name="ownAddr" value="%OWN_ADDR%" class="form-input">
+                    <div class="help-text">
+                        Enter your node's address as comma-separated numbers (e.g., "1,2,3") not (e.g., "1,02,3") not (e.g., " 1, 2,3")<br>
+                        Each number represents a level in the network hierarchy
+                    </div>
+                </div>
+
+                <div class="form-group">
+                    <label class="form-label">Connections</label>
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Address</th>
+                                <th>Pin</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            %CONNECTION_ROWS%
+                        </tbody>
+                    </table>
+                    <button type="button" onclick="addRow() " class
+            = "btn btn-outline" > Add Connection</ button>
+              </ div>
+
+              <button type = "submit" class = "btn btn-success" style="margin-left: 5px;"> Save Configuration</ button>
+              </ form>
+              </ div>
+
+                <h4>Messages:</h4>
+              <iframe class="config-card" frameborder="0" src="/messages"></iframe>
+              <h4>Errors:</h4>
+              <iframe class="config-card" frameborder="0" src="/errors"></iframe>
+
+              </div>
+
+              <script>
+                  function addRow()
+        {
+            const tbody = document.querySelector('tbody');
+            const row = document.createElement('tr');
+            row.innerHTML = ` <td><input name = "address[]" class = "form-input"></ td>
+                <td><input type = "number" name = "pin[]" class = "form-input"></ td>
+                <td><button type = "button" onclick = "removeRow(this) " class
+            = "btn-danger btn" > Remove</ button></ td>
+            `;
+        tbody.appendChild(row);
+    }
+
+    function removeRow(btn)
+    {
+        btn.closest('tr').remove();
+    }
+    </script>
+</body>
+</html>
+        )";
+
+        page.replace("< ", "<");
+        page.replace(" >", ">");
+        page.replace("</ ", "</");
+        page.replace(" = ", "=");
+        page.replace(")\"", ") \"");
+
+        page.replace("%OWN_ADDR%", ownAddrStr);
+        page.replace("%CONNECTION_ROWS%", connectionRows);
+        page.replace("%SERVER_URL%", getServerURL());
+        server.send(200, "text/html", page);
+    }
+
+    bool
+    connectWiFi(const String &ssid, const String &pwd)
+    {
+        Serial.printf("[Web] connectWiFi '%s'\n", ssid.c_str());
+        WiFi.begin(ssid.c_str(), pwd.c_str());
+        uint32_t t = millis();
+        while (WiFi.status() != WL_CONNECTED && millis() - t < WIFI_CONNECT_TIMEOUT_MS)
+            delay(500);
+        if (WiFi.status() == WL_CONNECTED)
+        {
+            Serial.println("[Web] WiFi connected");
+            return true;
+        }
+        Serial.println("[Web] WiFi failed");
+        return false;
+    }
+
+    void loadAPSuffix()
+    {
+        Serial.println("[Web] loadAPSuffix");
+        if (!LittleFS.exists(AP_SUFFIX_FILE))
+        {
+            apSuffix = esp_random() & 0xFFFF;
+            File f = LittleFS.open(AP_SUFFIX_FILE, "w");
+            if (f)
+            {
+                f.println(apSuffix);
+                f.close();
+                Serial.printf("[Web] new suffix=%u\n", apSuffix);
+            }
+        }
+        else
+        {
+            File f = LittleFS.open(AP_SUFFIX_FILE, "r");
+            if (f)
+            {
+                apSuffix = f.readStringUntil('\n').toInt();
+                f.close();
+                Serial.printf("[Web] loaded suffix=%u\n", apSuffix);
+            }
+        }
+    }
+
+    void loadCredentials()
+    {
+        Serial.println("[Web] loadCredentials");
+        if (!LittleFS.exists(WIFI_CRED_FILE))
+        {
+            File f = LittleFS.open(WIFI_CRED_FILE, "w");
+            if (f)
+                f.close();
+            return;
+        }
+        File f = LittleFS.open(WIFI_CRED_FILE, "r");
+        if (f)
+        {
+            wifiSSID = f.readStringUntil('\n');
+            wifiSSID.trim();
+            wifiPassword = f.readStringUntil('\n');
+            wifiPassword.trim();
+            f.close();
+            Serial.printf("[Web] creds loaded SSID='%s'\n", wifiSSID.c_str());
+        }
+    }
+
+    void saveCredentials()
+    {
+        Serial.println("[Web] saveCredentials");
+        File f = LittleFS.open(WIFI_CRED_FILE, "w");
+        if (f)
+        {
+            f.println(wifiSSID);
+            f.println(wifiPassword);
+            f.close();
+            Serial.println("[Web] creds saved");
+        }
+    }
+
+    void loadConnections()
+    {
+        Serial.println("[Web] loadConnections");
+        physikalNode.logicalNode.connections.clear();
+
+        if (!LittleFS.exists(CONN_FILE))
+        {
+            File f = LittleFS.open(CONN_FILE, "w");
+            if (f)
+                f.close();
+            return;
+        }
+
+        File f = LittleFS.open(CONN_FILE, "r");
+        if (f)
+        {
+            bool firstLine = true;
+            while (f.available())
+            {
+                String ln = f.readStringUntil('\n');
+                if (ln.isEmpty())
+                    continue;
+
+                int p = ln.indexOf(':');
+                if (p < 0)
+                    continue;
+
+                String as = ln.substring(0, p);
+                String ps = ln.substring(p + 1);
+
+                if (firstLine)
+                {
+                    // Load Own Address
+                    Address addr;
+                    std::istringstream ss(as.c_str());
+                    uint16_t v;
+                    while (ss >> v)
+                    {
+                        addr.push_back(v);
+                        if (ss.peek() == ',')
+                            ss.ignore();
+                    }
+                    physikalNode.logicalNode.you = addr;
+                    firstLine = false;
+                }
+                else
+                {
+                    // Load Connection
+                    Connection c;
+                    std::istringstream ss(as.c_str());
+                    uint16_t v;
+                    while (ss >> v)
+                    {
+                        c.address.push_back(v);
+                        if (ss.peek() == ',')
+                            ss.ignore();
+                    }
+                    c.pin = uint8_t(ps.toInt());
+                    physikalNode.logicalNode.connections.push_back(c);
+                }
+            }
+            f.close();
+        }
+        Serial.printf("[Web] %u connections loaded\n", physikalNode.logicalNode.connections.size());
+    }
+
+    void saveConnections()
+    {
+        Serial.println("[Web] saveConnections");
+        File f = LittleFS.open(CONN_FILE, "w");
+        if (f)
+        {
+            // Save Own Address (first line)
+            for (size_t i = 0; i < physikalNode.logicalNode.you.size(); ++i)
+            {
+                f.print(physikalNode.logicalNode.you[i]);
+                if (i + 1 < physikalNode.logicalNode.you.size())
+                    f.print(',');
+            }
+            f.println(":0");
+
+            // Save Connections
+            for (auto &c : physikalNode.logicalNode.connections)
+            {
+                for (size_t i = 0; i < c.address.size(); ++i)
+                {
+                    f.print(c.address[i]);
+                    if (i + 1 < c.address.size())
+                        f.print(',');
+                }
+                f.print(':');
+                f.println(c.pin);
+            }
+            f.close();
+            Serial.println("[Web] connections saved");
+        }
+    }
+};
+
