@@ -1,1 +1,0 @@
-#define USER 1
