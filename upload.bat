@@ -11,7 +11,7 @@ if "%~1"=="" (
 
 for %%P in (%*) do (
     echo Uploading to %%P...
-    "C:\Users\Manuel Westermeier\.platformio\penv\Scripts\platformio.exe" run --target upload --upload-port %%P
+    pio run --target upload --upload-port %%P
     echo.
 )
 
