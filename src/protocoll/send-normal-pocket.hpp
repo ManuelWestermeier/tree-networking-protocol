@@ -26,17 +26,6 @@ void PhysikalNode::sendNormalPocket(Pocket &p, uint8_t pin)
 
     pinMode(pin, INPUT); // Switch back to receive mode
 
-    for (auto &pending : pendingPackets)
-    {
-        if (pending.pocket.checksum == p.checksum)
-        {
-            Serial.println("[Protocol] sendNormalPocket: packet already pending, not adding again.");
-            return;
-        }
-    }
-
     Serial.print("[Protocol] sendNormalPocket: queued packet with checksum ");
     Serial.println(p.checksum, HEX);
-
-    pendingPackets.push_back(PendingPacket(p, pin, 1, millis()));
 }

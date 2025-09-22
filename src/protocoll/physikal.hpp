@@ -8,7 +8,6 @@
 
 #include "./raw-communication.hpp"
 #include "logical.hpp"
-#include "pending-packet.hpp"
 
 #define NORMAL_SEND 1
 #define RETURN_OK 2
@@ -22,7 +21,6 @@ struct PhysikalNode
 {
   Node logicalNode;
   TaskHandle_t taskHandle = nullptr;
-  vector<PendingPacket> pendingPackets;
 
   std::function<void(const char *data)> onData = nullptr;
   std::function<void(String)> onError = nullptr;
@@ -60,26 +58,6 @@ struct PhysikalNode
     }
   }
 
-  void acknowledge(uint16_t hash)
-  {
-    Serial.print("[Protocol] acknowledge: checking for hash ");
-    Serial.println(hash);
-
-    for (auto it = pendingPackets.begin(); it != pendingPackets.end(); ++it)
-    {
-      if (it->pocket.checksum == hash)
-      {
-        Serial.println("[Protocol] acknowledge: match found, removing pending packet");
-        pendingPackets.erase(it);
-        break;
-      }
-    }
-  }
-
-  void checkPendingAcks();
-  void handlePacketRetry(PendingPacket &pending, unsigned long currentTime);
-  void handlePacketFailure(vector<PendingPacket>::iterator &it, unsigned long currentTime);
-
   void loop()
   {
     Serial.println("[Protocol] loop: starting main loop");
@@ -99,8 +77,7 @@ struct PhysikalNode
           receivePocket(conn.pin);
         }
       }
-      checkPendingAcks();
-      vTaskDelay(0);
+      vTaskDelay(1);
     }
   }
 
@@ -131,6 +108,5 @@ struct PhysikalNode
 };
 
 #include "./raw-communication.hpp"
-#include "./check-pending-acks.hpp"
 #include "./receive-pocket.hpp"
 #include "./send-normal-pocket.hpp"
