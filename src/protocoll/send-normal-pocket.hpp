@@ -9,14 +9,14 @@ void PhysikalNode::sendNormalPocket(Pocket &p, uint8_t pin)
 
     pinMode(pin, OUTPUT);
     digitalWrite(pin, HIGH);
-    delayMicroseconds(1000);
+    delayMicroseconds(BIT_DELAY);
 
-    sendByte(pin, NORMAL_SEND);
-    sendUInt16(pin, p.address.size());
     for (auto a : p.address)
     {
         sendUInt16(pin, a);
     }
+    sendUInt16(pin, 0); // End of address marker
+
     for (int i = 0; i < 10; i++)
     {
         sendByte(pin, p.data[i]);

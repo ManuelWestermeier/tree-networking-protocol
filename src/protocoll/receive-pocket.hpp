@@ -4,15 +4,14 @@
 
 void PhysikalNode::receivePocket(uint8_t pin)
 {
-    uint16_t addrSize = readUInt16(pin);
     Address address;
-    Serial.println("Addr size: " + String(addrSize));
 
-    address.reserve(addrSize);
-
-    for (int i = 0; i < addrSize; i++)
+    while (true)
     {
-        address.push_back(readUInt16(pin));
+        auto v = readUInt16(pin);
+        if (v == 0)
+            break;
+        address.push_back(v);
     }
 
     char data[11];
