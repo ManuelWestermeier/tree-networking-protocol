@@ -22,6 +22,8 @@ void PhysikalNode::sendNormalPocket(Pocket &p, uint8_t pin)
         sendByte(pin, p.data[i]);
     }
 
+    sendUInt16(pin, p.id);
+
     sendUInt16(pin, p.checksum);
 
     pinMode(pin, INPUT); // Switch back to receive mode

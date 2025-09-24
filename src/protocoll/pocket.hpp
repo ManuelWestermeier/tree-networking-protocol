@@ -6,6 +6,7 @@ struct Pocket
     Address address;
     char data[11];
     uint16_t checksum;
+    uint16_t id;
 
     Pocket(Address a, const char *d) : address(a)
     {

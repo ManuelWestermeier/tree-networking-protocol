@@ -103,7 +103,9 @@ struct PhysikalNode
   void send(Address address, const char *data)
   {
     Serial.println("[Protocol] send: creating and sending pocket");
-    on(Pocket(address, data));
+    auto p = Pocket(address, data);
+    p.id = random(65535);
+    on(p);
   }
 };
 
