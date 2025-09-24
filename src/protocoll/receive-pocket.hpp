@@ -18,12 +18,12 @@ void PhysikalNode::receivePocket(uint8_t pin)
         address.push_back(v);
     }
 
-    char data[11];
-    for (int i = 0; i < 10; i++)
+    char data[DATASIZE + 1];
+    for (int i = 0; i < DATASIZE; i++)
     {
         data[i] = readByte(pin);
     }
-    data[10] = '\0';
+    data[DATASIZE] = '\0';
 
     uint16_t id = readUInt16(pin);
     uint16_t checksum = readUInt16(pin);

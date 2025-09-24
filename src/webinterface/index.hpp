@@ -267,9 +267,9 @@ private:
         }
 
         // Ensure message is not too long
-        if (rawMsg.length() > 10)
+        if (rawMsg.length() > DATASIZE)
         {
-            rawMsg = rawMsg.substring(0, 10);
+            rawMsg = rawMsg.substring(0, DATASIZE);
         }
 
         // Send the message
@@ -559,9 +559,9 @@ private:
                         Each number represents a level in the network hierarchy
                     </div>
                     <br>
-                    <input style="margin-bottom: 5px;" type="text" name="message" placeholder="text...max 10 chars" class="form-input">
+                    <input style="margin-bottom: 5px;" type="text" name="message" placeholder="text..." class="form-input">
                     <br>
-                    <button type="submit" class="btn btn-outline">Send Message (Max 10 Chars)</button>
+                    <button type="submit" class="btn btn-outline">Send Message</button>
                 </div>
         </form>
             <form action="/connections/save" method="post">

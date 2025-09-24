@@ -17,7 +17,7 @@ void PhysikalNode::sendNormalPocket(Pocket &p, uint8_t pin)
     }
     sendUInt16(pin, 0); // End of address marker
 
-    for (int i = 0; i < 10; i++)
+    for (int i = 0; i < DATASIZE; i++)
     {
         sendByte(pin, p.data[i]);
     }
