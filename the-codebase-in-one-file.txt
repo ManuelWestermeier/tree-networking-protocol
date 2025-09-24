@@ -17,125 +17,6 @@ void loop()
   vTaskDelay(pdMS_TO_TICKS(1000));
 }
 
-//filepath: src\protocoll\check-pending-acks.hpp
-#pragma once
-
-#include "./physikal.hpp"
-#include "./pending-packet.hpp"
-
-#include <algorithm>
-
-void PhysikalNode::checkPendingAcks()
-{
-    unsigned long currentTime = millis();
-
-    for (auto it = pendingPackets.begin(); it != pendingPackets.end();)
-    {
-        PendingPacket &pending = *it;
-
-        if (currentTime - pending.lastSendTime > RESEND_TIMEOUT)
-        {
-            if (pending.attempts < MAX_ATTEMPTS)
-            {
-                Serial.print("[Protocol] checkPendingAcks: retrying packet ");
-                Serial.println(pending.pocket.checksum, HEX);
-                handlePacketRetry(pending, currentTime);
-                ++it;
-            }
-            else
-            {
-                Serial.print("[Protocol] checkPendingAcks: packet failed too often, handling failure ");
-                Serial.println(pending.pocket.checksum, HEX);
-                handlePacketFailure(it, currentTime);
-            }
-        }
-        else
-        {
-            ++it;
-        }
-    }
-}
-
-void PhysikalNode::handlePacketRetry(PendingPacket &pending, unsigned long currentTime)
-{
-    pending.attempts++;
-    pending.lastSendTime = currentTime;
-
-    Serial.print("[Protocol] handlePacketRetry: attempt ");
-    Serial.print(pending.attempts);
-    Serial.print(" for packet ");
-    Serial.println(pending.pocket.checksum, HEX);
-
-    if (onError != nullptr)
-    {
-        onError("Checksum mismatch! Resending packet " +
-                String(pending.pocket.checksum, HEX) +
-                " attempt " + String(pending.attempts));
-    }
-
-    sendNormalPocket(pending.pocket, pending.sendPin);
-}
-
-void PhysikalNode::handlePacketFailure(vector<PendingPacket>::iterator &it, unsigned long currentTime)
-{
-    PendingPacket &pending = *it;
-
-    Serial.print("[Protocol] handlePacketFailure: packet ");
-    Serial.print(pending.pocket.checksum, HEX);
-    Serial.println(" failed, removing current connection");
-
-    if (onError != nullptr)
-    {
-        onError("Packet " + String(pending.pocket.checksum, HEX) +
-                " failed 3 times. Removing connection and retrying on a new pin.");
-    }
-
-    uint8_t failedPin = pending.sendPin;
-
-    auto connIt = std::find_if(
-        logicalNode.connections.begin(),
-        logicalNode.connections.end(),
-        [failedPin](const Connection &conn)
-        { return conn.pin == failedPin; });
-
-    if (connIt != logicalNode.connections.end())
-    {
-        logicalNode.connections.erase(connIt);
-    }
-
-    if (!logicalNode.connections.empty())
-    {
-        uint8_t newPin = logicalNode.connections.front().pin;
-
-        Serial.print("[Protocol] handlePacketFailure: retrying on pin ");
-        Serial.println(newPin);
-
-        if (onError != nullptr)
-        {
-            onError("Resending on new connection pin: " + String(newPin));
-        }
-
-        pending.sendPin = newPin;
-        pending.attempts = 1;
-        pending.lastSendTime = currentTime;
-
-        sendNormalPocket(pending.pocket, newPin);
-        ++it;
-    }
-    else
-    {
-        Serial.println("[Protocol] handlePacketFailure: no more connections available, dropping packet");
-
-        if (onError != nullptr)
-        {
-            onError("No available logicalNode.connections to resend packet.");
-        }
-
-        it = pendingPackets.erase(it);
-    }
-}
-
-
 //filepath: src\protocoll\index.hpp
 #pragma once
 
@@ -290,23 +171,6 @@ struct Node
 };
 
 
-//filepath: src\protocoll\pending-packet.hpp
-#pragma once
-
-#include <Arduino.h>
-#include "./logical.hpp"
-
-struct PendingPacket
-{
-    Pocket pocket;
-    uint8_t sendPin;
-    uint8_t attempts;
-    unsigned long lastSendTime; // in milliseconds
-
-    PendingPacket(const Pocket &p, uint8_t pin, uint8_t att, unsigned long time)
-        : pocket(p), sendPin(pin), attempts(att), lastSendTime(time) {}
-};
-
 //filepath: src\protocoll\physikal.hpp
 #pragma once
 
@@ -318,7 +182,6 @@ struct PendingPacket
 
 #include "./raw-communication.hpp"
 #include "logical.hpp"
-#include "pending-packet.hpp"
 
 #define NORMAL_SEND 1
 #define RETURN_OK 2
@@ -332,7 +195,6 @@ struct PhysikalNode
 {
   Node logicalNode;
   TaskHandle_t taskHandle = nullptr;
-  vector<PendingPacket> pendingPackets;
 
   std::function<void(const char *data)> onData = nullptr;
   std::function<void(String)> onError = nullptr;
@@ -370,26 +232,6 @@ struct PhysikalNode
     }
   }
 
-  void acknowledge(uint16_t hash)
-  {
-    Serial.print("[Protocol] acknowledge: checking for hash ");
-    Serial.println(hash);
-
-    for (auto it = pendingPackets.begin(); it != pendingPackets.end(); ++it)
-    {
-      if (it->pocket.checksum == hash)
-      {
-        Serial.println("[Protocol] acknowledge: match found, removing pending packet");
-        pendingPackets.erase(it);
-        break;
-      }
-    }
-  }
-
-  void checkPendingAcks();
-  void handlePacketRetry(PendingPacket &pending, unsigned long currentTime);
-  void handlePacketFailure(vector<PendingPacket>::iterator &it, unsigned long currentTime);
-
   void loop()
   {
     Serial.println("[Protocol] loop: starting main loop");
@@ -409,8 +251,7 @@ struct PhysikalNode
           receivePocket(conn.pin);
         }
       }
-      checkPendingAcks();
-      vTaskDelay(0);
+      vTaskDelay(1);
     }
   }
 
@@ -436,12 +277,13 @@ struct PhysikalNode
   void send(Address address, const char *data)
   {
     Serial.println("[Protocol] send: creating and sending pocket");
-    on(Pocket(address, data));
+    auto p = Pocket(address, data);
+    p.id = random(65535);
+    on(p);
   }
 };
 
 #include "./raw-communication.hpp"
-#include "./check-pending-acks.hpp"
 #include "./receive-pocket.hpp"
 #include "./send-normal-pocket.hpp"
 
@@ -455,6 +297,7 @@ struct Pocket
     Address address;
     char data[11];
     uint16_t checksum;
+    uint16_t id;
 
     Pocket(Address a, const char *d) : address(a)
     {
@@ -542,71 +385,62 @@ void sendUInt16(uint8_t pin, uint16_t val)
 
 #include "./physikal.hpp"
 
-void sendAck(uint8_t pin, uint16_t checksum)
-{
-    Serial.println("[Protocol] sendAck: sending ACK with checksum");
-
-    pinMode(pin, OUTPUT);
-    digitalWrite(pin, HIGH);
-    delayMicroseconds(1000);
-
-    sendByte(pin, RETURN_OK);
-    sendUInt16(pin, checksum);
-
-    pinMode(pin, INPUT);
-}
+#define IGNORE_ID_POOL_SIZE 16
+uint16_t ignorePoolIds[IGNORE_ID_POOL_SIZE];
+size_t ignorePoolIndex = 0;
 
 void PhysikalNode::receivePocket(uint8_t pin)
 {
-    uint8_t pocketType = readByte(pin);
-    Serial.print("[Protocol] receivePocket: pocket type = ");
-    Serial.println(pocketType);
+    Address address;
 
-    if (pocketType == NORMAL_SEND)
+    while (true)
     {
-        uint16_t addrSize = readUInt16(pin);
-        Address address;
-        address.reserve(addrSize);
-        for (int i = 0; i < addrSize; i++)
+        auto v = readUInt16(pin);
+        if (v == 0)
+            break;
+        address.push_back(v);
+    }
+
+    char data[11];
+    for (int i = 0; i < 10; i++)
+    {
+        data[i] = readByte(pin);
+    }
+    data[10] = '\0';
+
+    uint16_t id = readUInt16(pin);
+    uint16_t checksum = readUInt16(pin);
+
+    Pocket p(address, data);
+    p.id = id;
+
+    if (p.checksum != checksum)
+    {
+        Serial.println("[Protocol] receivePocket: checksum mismatch");
+
+        if (onError != nullptr)
         {
-            address.push_back(readUInt16(pin));
+            onError("Checksum mismatch! Data:");
+            onError(data);
         }
+        return;
+    }
 
-        char data[11];
-        for (int i = 0; i < 10; i++)
+    for (size_t i = 0; i < IGNORE_ID_POOL_SIZE; i++)
+    {
+        if (ignorePoolIds[i] == id)
         {
-            data[i] = readByte(pin);
-        }
-        data[10] = '\0';
-
-        uint16_t checksum = readUInt16(pin);
-        Pocket p(address, data);
-
-        if (p.checksum != checksum)
-        {
-            Serial.println("[Protocol] receivePocket: checksum mismatch");
-
-            if (onError != nullptr)
-            {
-                onError("Checksum mismatch! Data:");
-                onError(data);
-            }
+            Serial.println("[Protocol] receivePocket: duplicate pocket, ignoring");
             return;
         }
+    }
 
-        Serial.println("[Protocol] receivePocket: checksum valid, sending ACK");
-        sendAck(pin, p.checksum);
-        on(p);
-    }
-    else if (pocketType == RETURN_OK)
-    {
-        uint16_t hash = readUInt16(pin);
-        Serial.print("[Protocol] receivePocket: received ACK for hash ");
-        Serial.println(hash);
-        acknowledge(hash);
-    }
+    ignorePoolIds[ignorePoolIndex] = id;
+    ignorePoolIndex = (ignorePoolIndex + 1) % IGNORE_ID_POOL_SIZE;
+
+    Serial.println("[Protocol] receivePocket: checksum valid, sending ACK");
+    on(p);
 }
-
 
 //filepath: src\protocoll\send-normal-pocket.hpp
 #pragma once
@@ -620,36 +454,27 @@ void PhysikalNode::sendNormalPocket(Pocket &p, uint8_t pin)
 
     pinMode(pin, OUTPUT);
     digitalWrite(pin, HIGH);
-    delayMicroseconds(1000);
+    delayMicroseconds(BIT_DELAY);
 
-    sendByte(pin, NORMAL_SEND);
-    sendUInt16(pin, p.address.size());
     for (auto a : p.address)
     {
         sendUInt16(pin, a);
     }
+    sendUInt16(pin, 0); // End of address marker
+
     for (int i = 0; i < 10; i++)
     {
         sendByte(pin, p.data[i]);
     }
 
+    sendUInt16(pin, p.id);
+
     sendUInt16(pin, p.checksum);
 
     pinMode(pin, INPUT); // Switch back to receive mode
 
-    for (auto &pending : pendingPackets)
-    {
-        if (pending.pocket.checksum == p.checksum)
-        {
-            Serial.println("[Protocol] sendNormalPocket: packet already pending, not adding again.");
-            return;
-        }
-    }
-
     Serial.print("[Protocol] sendNormalPocket: queued packet with checksum ");
     Serial.println(p.checksum, HEX);
-
-    pendingPackets.push_back(PendingPacket(p, pin, 1, millis()));
 }
 
 
