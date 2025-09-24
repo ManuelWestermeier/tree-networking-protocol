@@ -1,6 +1,6 @@
 #pragma once
 
-#define BIT_DELAY 200
+#define BIT_DELAY 50000
 
 #include <Arduino.h>
 
