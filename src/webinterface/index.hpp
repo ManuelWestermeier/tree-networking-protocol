@@ -111,11 +111,11 @@ private:
 
     void setupRoutes()
     {
-        physikalNode.onData = [&](String data)
+        physikalNode.onData = [&](Pocket pocket)
         {
-            messages.push_back(data);
+            messages.push_back(pocket.data);
         };
-        physikalNode.onError = [&](String error)
+        physikalNode.onError = [&](String error, Pocket pocket)
         {
             errors.push_back(error);
         };

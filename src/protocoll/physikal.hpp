@@ -32,8 +32,8 @@ struct PhysikalNode
   TaskHandle_t taskHandle = nullptr;
   QueueHandle_t sendQueue = nullptr;
 
-  std::function<void(const char *data)> onData = nullptr;
-  std::function<void(String)> onError = nullptr;
+  std::function<void(Pocket pocket)> onData = nullptr;
+  std::function<void(String error, Pocket pocket)> onError = nullptr;
 
   static void loopTask(void *params)
   {
@@ -68,13 +68,13 @@ struct PhysikalNode
     {
       Serial.println("[Protocol] on: delivering data to application layer");
       if (onData)
-        onData(p.data);
+        onData(p);
     }
     else if (sendPin == (uint8_t)-1)
     {
       Serial.println("[Protocol] on: pocket cannot reach destination");
       if (onError)
-        onError("pocket cannot reach destination");
+        onError("pocket cannot reach destination", p);
     }
     else
     {
@@ -157,12 +157,12 @@ struct PhysikalNode
     if (sendPin == 0)
     {
       if (onData)
-        onData(p.data);
+        onData(p);
     }
     else if (sendPin == (uint8_t)-1)
     {
       if (onError)
-        onError("pocket cannot reach destination");
+        onError("pocket cannot reach destination", p);
     }
     else
     {

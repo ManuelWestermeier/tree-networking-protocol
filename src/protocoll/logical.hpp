@@ -118,6 +118,7 @@ struct Node
       }
     }
 
+    // if the pocket is for a direct child, but the node is the last (its a virtual children)
     if (isDirectChildren && !isChildren(sendConnection.address, you))
     {
       return 0;
