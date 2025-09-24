@@ -55,6 +55,6 @@ void PhysikalNode::receivePocket(uint8_t pin)
     ignorePoolIds[ignorePoolIndex] = id;
     ignorePoolIndex = (ignorePoolIndex + 1) % IGNORE_ID_POOL_SIZE;
 
-    Serial.println("[Protocol] receivePocket: checksum valid, sending ACK");
+    Serial.println("[Protocol] receivePocket: checksum valid");
     on(p);
 }
