@@ -92,6 +92,12 @@ struct Node
       Serial.println("[Protocol] send: no connections available");
       return 0;
     }
+    
+    if (eq(you, p.address))
+    {
+      Serial.println("[Protocol] recieve: packet is for us");
+      return 0;
+    }
 
     Serial.println("[Protocol] send: selecting best connection...");
 
@@ -132,15 +138,6 @@ struct Node
 
   uint8_t recieve(Pocket p)
   {
-    if (eq(you, p.address))
-    {
-      Serial.println("[Protocol] recieve: packet is for us");
-      return 0;
-    }
-    else
-    {
-      Serial.println("[Protocol] recieve: forwarding packet");
-      return send(p);
-    }
+    return send(p);
   }
 };

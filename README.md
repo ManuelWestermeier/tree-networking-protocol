@@ -1,5 +1,11 @@
 # MW-TREE-ROUTER
 
+breadboard + esp1 =  http://192.168.4.3/connections
+
+breadboard + esp2 = http://192.168.4.2/connections
+
+module + esp1 = http://192.168.4.1/connections
+
 how to use:
 
 1. cone project.
