@@ -38,6 +38,7 @@
         gap: 12px;
         align-items: center;
         backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
         background: linear-gradient(
           90deg,
           rgba(255, 255, 255, 0.03),
@@ -84,6 +85,7 @@
         cursor: pointer;
         font-weight: 600;
         backdrop-filter: blur(3px);
+        -webkit-backdrop-filter: blur(3px);
       }
       button.secondary {
         color: var(--muted);
@@ -259,14 +261,23 @@
       </div>
 
       <div class="controls">
-        <button id="btn-add-node">➕ Add Node</button>
-        <button id="btn-add-connection" class="secondary">
+        <button type="button" id="btn-add-node">➕ Add Node</button>
+        <button type="button" id="btn-add-connection" class="secondary">
           🔀 Add Connection
         </button>
-        <button id="btn-simulate" onclick="document.getElementById('btn-run-sim').click()" class="secondary">▶ Simulate Pocket</button>
-        <button id="btn-clear" class="secondary">🗑 Clear</button>
-        <button id="btn-export">💾 Export</button>
-        <button id="btn-import" class="secondary">📂 Import</button>
+        <button
+          type="button"
+          id="btn-simulate"
+          onclick="document.getElementById('btn-run-sim').click()"
+          class="secondary"
+        >
+          ▶ Simulate Pocket
+        </button>
+        <button type="button" id="btn-clear" class="secondary">🗑 Clear</button>
+        <button type="button" id="btn-export">💾 Export</button>
+        <button type="button" id="btn-import" class="secondary">
+          📂 Import
+        </button>
       </div>
 
       <div class="search">
@@ -294,9 +305,13 @@
           </div>
         </div>
         <div style="display: flex; gap: 8px; margin-top: 8px">
-          <button id="btn-edit-node">Edit</button>
-          <button id="btn-delete-node" class="secondary">Delete</button>
-          <button id="btn-center-node" class="secondary">Center</button>
+          <button type="button" id="btn-edit-node">Edit</button>
+          <button type="button" id="btn-delete-node" class="secondary">
+            Delete
+          </button>
+          <button type="button" id="btn-center-node" class="secondary">
+            Center
+          </button>
         </div>
       </div>
 
@@ -323,7 +338,12 @@
 
       <h3>Simulation</h3>
       <label>Source Node</label>
-      <select id="sim-source" class="input"></select>
+      <select
+        name="sss"
+        title="sim source select"
+        id="sim-source"
+        class="input"
+      ></select>
       <label>Destination Address (comma-separated segments, e.g. 1,2,3)</label>
       <input
         id="sim-dest"
@@ -331,11 +351,18 @@
         placeholder="e.g. 1,2,3 or choose a node below"
       />
       <label style="margin-top: 8px">Or choose destination node</label>
-      <select id="sim-dest-node" class="input"></select>
+      <select
+        name="sds"
+        title="sim destination select"
+        id="sim-dest-node"
+        class="input"
+      ></select>
       <div style="display: flex; gap: 8px; margin-top: 8px">
-        <button id="btn-run-sim">Run step-by-step</button>
-        <button id="btn-run-fast" class="secondary">Run fast</button>
-        <button id="btn-stop-sim" class="secondary">Stop</button>
+        <button type="button" id="btn-run-sim">Run step-by-step</button>
+        <button type="button" id="btn-run-fast" class="secondary">
+          Run fast
+        </button>
+        <button type="button" id="btn-stop-sim" class="secondary">Stop</button>
       </div>
 
       <hr
@@ -368,12 +395,19 @@
             >Parent (optional — pick a node to make this one a child; if blank
             it becomes a root)</label
           >
-          <select id="node-parent" class="input">
+          <select
+            name="nps"
+            title="node parent select"
+            id="node-parent"
+            class="input"
+          >
             <option value="">-- none (root) --</option>
           </select>
           <div class="row" style="justify-content: flex-end; margin-top: 6px">
-            <button id="modal-save">Save</button>
-            <button id="modal-cancel" class="secondary">Cancel</button>
+            <button type="button" id="modal-save">Save</button>
+            <button type="button" id="modal-cancel" class="secondary">
+              Cancel
+            </button>
           </div>
         </div>
       </div>
@@ -696,7 +730,7 @@
             <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
               <div class="pin-badge">${o.pin}</div>
               <div style="display:flex;gap:6px">
-                <button class="btn btn-remove-conn small secondary" data-from="${
+                <button type="button" class="btn btn-remove-conn small secondary" data-from="${
                   n.id
                 }" data-to="${o.toId}">Remove</button>
               </div>
