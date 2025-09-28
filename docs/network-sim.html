@@ -134,7 +134,7 @@
         right: 26px;
         top: 100px;
         width: 360px;
-        max-height: 70vh;
+        max-height: calc(100% - 160px);
         padding: 12px;
         border-radius: 12px;
         background: linear-gradient(
@@ -145,6 +145,9 @@
         box-shadow: 0 10px 30px rgba(2, 6, 23, 0.6);
         z-index: 60;
         overflow: auto;
+      }
+      ::-webkit-scrollbar {
+        display: none;
       }
       .panel h3 {
         margin: 4px 0 10px 0;
