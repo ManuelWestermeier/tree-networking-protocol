@@ -263,7 +263,7 @@
         <button id="btn-add-connection" class="secondary">
           🔀 Add Connection
         </button>
-        <button id="btn-simulate" class="secondary">▶ Simulate Pocket</button>
+        <button id="btn-simulate" onclick="document.getElementById('btn-run-sim').click()" class="secondary">▶ Simulate Pocket</button>
         <button id="btn-clear" class="secondary">🗑 Clear</button>
         <button id="btn-export">💾 Export</button>
         <button id="btn-import" class="secondary">📂 Import</button>
@@ -1438,7 +1438,7 @@
           x: canvas.clientWidth / 2,
           y: canvas.clientHeight / 2,
         };
-        view.tx = screenCenter.x - n.x * view.scale;
+        view.tx = (screenCenter.x - n.x - 360 / 2) * view.scale;
         view.ty = screenCenter.y - n.y * view.scale;
         draw();
       }
@@ -1462,6 +1462,8 @@
       })();
 
       canvas.addEventListener("contextmenu", (e) => e.preventDefault());
+
+      centerOnNode(state.nodes[0]);
     </script>
   </body>
 </html>
