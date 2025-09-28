@@ -1,0 +1,1033 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Hierarchical Network Simulator</title>
+<style>
+  :root{
+    --bg1:#0f1724;
+    --bg2:#071024;
+    --panel:#0b1220cc;
+    --accent: #6EE7B7;
+    --muted:#9AA6B2;
+    --glass: rgba(255,255,255,0.04);
+  }
+  html,body{height:100%;margin:0;font-family:Inter,ui-sans-serif,system-ui,Segoe UI,Roboto,"Helvetica Neue",Arial;}
+  body{
+    background: linear-gradient(180deg,var(--bg1),var(--bg2));
+    color:#e6f0f2;
+    overflow:hidden;
+  }
+
+  /* Top bar */
+  .topbar{
+    position:fixed;left:12px;right:12px;top:12px;height:54px;border-radius:12px;padding:8px 12px;
+    display:flex;gap:12px;align-items:center;backdrop-filter: blur(6px);
+    background:linear-gradient(90deg, rgba(255,255,255,0.03), rgba(255,255,255,0.02));
+    box-shadow: 0 6px 30px rgba(0,0,0,0.6);
+    z-index:50;
+  }
+  .brand{display:flex;gap:8px;align-items:center;font-weight:700}
+  .brand .logo{
+    width:36px;height:36px;border-radius:10px;background:linear-gradient(135deg,#10b981,#06b6d4);
+    display:flex;align-items:center;justify-content:center;font-weight:800;color:#021;
+    box-shadow: 0 6px 18px rgba(2,6,23,0.6);
+  }
+  .controls{display:flex;gap:8px;align-items:center;margin-left:8px}
+  button, .btn {
+    background:linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+    color:var(--accent); border:1px solid rgba(255,255,255,0.04); padding:8px 12px;border-radius:10px;
+    cursor:pointer;font-weight:600;backdrop-filter: blur(3px);
+  }
+  button.secondary{color:var(--muted);background:transparent;border:1px dashed rgba(255,255,255,0.03)}
+  .search{margin-left:auto;display:flex;gap:8px;align-items:center}
+  input[type="text"], select {
+    background:transparent;border:1px solid rgba(255,255,255,0.04);padding:8px 10px;border-radius:8px;color:inherit;
+    outline:none;
+  }
+
+  /* Canvas container */
+  #canvas-wrap { position:fixed; left:12px; right:12px; top:78px; bottom:12px; border-radius:12px; overflow:hidden; }
+  canvas { width:100%; height:100%; display:block; background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,0.01) 0 1px, transparent 1px 64px),
+    linear-gradient(180deg, rgba(2,6,23,0.36), rgba(3,7,14,0.2));
+    cursor:grab;
+    display:block;
+  }
+
+  /* Right side panels (floating) */
+  .panel {
+    position:fixed; right:26px; top:100px; width:360px; max-height:70vh; padding:12px; border-radius:12px;
+    background:linear-gradient(180deg, rgba(255,255,255,0.02), rgba(255,255,255,0.01)); box-shadow: 0 10px 30px rgba(2,6,23,0.6);
+    z-index:60; overflow:auto;
+  }
+  .panel h3{margin:4px 0 10px 0;color:var(--accent)}
+  .list-item{display:flex;align-items:center;gap:8px;padding:8px;border-radius:8px;background:var(--glass);margin-bottom:8px;}
+  .muted{color:var(--muted);font-size:13px}
+  label{font-size:13px;color:var(--muted);display:block;margin-bottom:6px}
+
+  /* Node editing modal */
+  #modal{position:fixed;left:0;right:0;top:0;bottom:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,0.5);z-index:200}
+  .modal-card{width:520px;background:linear-gradient(180deg,#021124,#031826);padding:16px;border-radius:12px;box-shadow:0 30px 60px rgba(1,6,10,0.7)}
+  .row{display:flex;gap:8px;align-items:center}
+  .input{padding:8px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:transparent;color:inherit;width:100%}
+
+  /* Log area */
+  .log{font-family:monospace;background:linear-gradient(180deg, rgba(0,0,0,0.25), transparent);padding:10px;border-radius:8px;color:#d7f7ee;max-height:32vh;overflow:auto;font-size:13px}
+  .log .step{padding:6px;border-radius:6px;margin-bottom:6px;background:rgba(0,0,0,0.18)}
+
+  /* Small helpers */
+  .small{font-size:12px}
+  .pin-badge{background:rgba(255,255,255,0.04);padding:4px 8px;border-radius:8px;font-weight:700}
+  a { color:var(--accent); text-decoration:none }
+  .footer-hint { position:fixed; left:12px; bottom:12px; color:var(--muted); font-size:13px; z-index:60; }
+</style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="brand">
+      <div class="logo">NS</div>
+      <div>
+        <div style="font-size:14px">Network Simulator</div>
+        <div class="muted" style="font-size:12px">Hierarchical addressing & pocket routing visualizer</div>
+      </div>
+    </div>
+
+    <div class="controls">
+      <button id="btn-add-node">➕ Add Node</button>
+      <button id="btn-add-connection" class="secondary">🔀 Add Connection</button>
+      <button id="btn-simulate" class="secondary">▶ Simulate Pocket</button>
+      <button id="btn-clear" class="secondary">🗑 Clear</button>
+      <button id="btn-export">💾 Export</button>
+      <button id="btn-import" class="secondary">📂 Import</button>
+    </div>
+
+    <div class="search">
+      <label class="muted small">Zoom: <span id="zoom-label">100%</span></label>
+    </div>
+  </div>
+
+  <div id="canvas-wrap">
+    <canvas id="canvas"></canvas>
+  </div>
+
+  <div class="panel" id="panel-right">
+    <h3>Network Controls</h3>
+    <div>
+      <label>Selected Node</label>
+      <div class="list-item" id="selected-info" style="min-height:48px;">
+        <div style="flex:1">
+          <div id="sel-title" style="font-weight:700">—</div>
+          <div class="muted small" id="sel-address">—</div>
+        </div>
+        <div style="text-align:right">
+          <div class="pin-badge" id="sel-pin">—</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button id="btn-edit-node">Edit</button>
+        <button id="btn-delete-node" class="secondary">Delete</button>
+        <button id="btn-center-node" class="secondary">Center</button>
+      </div>
+    </div>
+
+    <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)">
+
+    <h3>Connections</h3>
+    <div id="connections-list" class="muted small">Select a node to see its connections.</div>
+
+    <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)">
+
+    <h3>Simulation</h3>
+    <label>Source Node</label>
+    <select id="sim-source" class="input"></select>
+    <label>Destination Address (comma-separated segments, e.g. 1,2,3)</label>
+    <input id="sim-dest" class="input" placeholder="e.g. 1,2,3 or choose a node below">
+    <label style="margin-top:8px">Or choose destination node</label>
+    <select id="sim-dest-node" class="input"></select>
+    <div style="display:flex;gap:8px;margin-top:8px">
+      <button id="btn-run-sim">Run step-by-step</button>
+      <button id="btn-run-fast" class="secondary">Run fast</button>
+      <button id="btn-stop-sim" class="secondary">Stop</button>
+    </div>
+
+    <hr style="margin:12px 0;border:none;border-top:1px solid rgba(255,255,255,0.03)">
+
+    <h3>Logs</h3>
+    <div id="log" class="log"></div>
+  </div>
+
+  <div class="footer-hint">Drag canvas to pan • Mouse wheel to zoom • Drag nodes to reposition • Right-click node for quick actions</div>
+
+  <!-- Modal -->
+  <div id="modal">
+    <div class="modal-card">
+      <h3 id="modal-title">Edit Node</h3>
+      <div style="display:grid;gap:8px">
+        <label>Label</label>
+        <input id="node-label" class="input" placeholder="My Node">
+        <label>Address segments (comma separated numbers)</label>
+        <input id="node-address" class="input" placeholder="e.g. 1,2,3">
+        <label>Parent (optional — pick a node to make this one a child; if blank it becomes a root)</label>
+        <select id="node-parent" class="input">
+          <option value="">-- none (root) --</option>
+        </select>
+        <div class="row" style="justify-content:flex-end;margin-top:6px">
+          <button id="modal-save">Save</button>
+          <button id="modal-cancel" class="secondary">Cancel</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script defer>
+/*
+  Network Simulator
+  - Nodes have: id, label, address: number[]
+  - Connections stored on node as outgoing connections: { toId, pin }
+  - On simulation, Node.send logic uses connection.targetNode.address as the Connection.address
+  - Visual and step-by-step log shows algorithm steps (match, matchIndex, eq, isChildren)
+*/
+
+// Utilities
+const uid = ()=>Math.random().toString(36).slice(2,9);
+const clamp = (v,a,b)=>Math.max(a,Math.min(b,v));
+const stringifyAddr = (a)=> a.length? a.join('.') : '(root)';
+
+// Algorithm functions ported from C++ logic
+function match(connectionAddr, pocketAddr) {
+  const minLen = Math.min(connectionAddr.length, pocketAddr.length);
+  let positive = 0;
+  while (positive < minLen && connectionAddr[positive] === pocketAddr[positive]) positive++;
+  const negative = connectionAddr.length - positive;
+  return { positive, negative };
+}
+function matchIndex(m) {
+  return m.positive - m.negative;
+}
+function eq(a1,a2) {
+  if (a1.length !== a2.length) return false;
+  for (let i=0;i<a1.length;i++) if (a1[i] !== a2[i]) return false;
+  return true;
+}
+function isChildren(other,you){
+  // other is child of you if other length > you length and prefix matches
+  if (other.length <= you.length) return false;
+  for (let i=0;i<you.length;i++) if (other[i] !== you[i]) return false;
+  return true;
+}
+
+// State
+let state = {
+  nodes: [], // { id,label,address:[nums], x,y, connections:[{toId,pin}] }
+};
+const STORAGE_KEY = 'net-sim-state';
+
+// Canvas interaction state
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+let DPR = window.devicePixelRatio || 1;
+let view = {tx:0,ty:0,scale:1}; // transform world->screen: (x*scale+tx)
+let draggingCanvas = false, dragStart=null;
+let selectedNodeId = null;
+let addingConnection = {from:null}; // when add connection button pressed
+let simulationRun = { running:false, stop:false };
+
+// Init
+function resizeCanvas(){
+  canvas.width = canvas.clientWidth * DPR;
+  canvas.height = canvas.clientHeight * DPR;
+  ctx.setTransform(DPR,0,0,DPR,0,0);
+  draw();
+}
+window.addEventListener('resize',()=>{
+  DPR = window.devicePixelRatio || 1;
+  resizeCanvas();
+});
+resizeCanvas();
+
+// Persistence
+function saveState(){
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+}
+function loadState(){
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if(raw){
+    try{
+      state = JSON.parse(raw);
+    }catch(e){ console.warn('load error', e); }
+  } else {
+    // bootstrap sample
+    state = { nodes: [] };
+    // create a small sample network
+    const a = { id: uid(), label:'Root A', address:[1], x:-200,y:0, connections:[] };
+    const b = { id: uid(), label:'Child A.1', address:[1,1], x:-80,y:-80, connections:[] };
+    const c = { id: uid(), label:'Child A.2', address:[1,2], x:-80,y:80, connections:[] };
+    a.connections.push({ toId: b.id, pin: 10 });
+    a.connections.push({ toId: c.id, pin: 11 });
+    b.connections.push({ toId: c.id, pin: 12 }); // lateral
+    state.nodes.push(a,b,c);
+    saveState();
+  }
+}
+
+// Helpers to manage nodes
+function findNode(id){ return state.nodes.find(n => n.id === id); }
+function findNodeByAddress(addr){ return state.nodes.find(n => eq(n.address, addr)); }
+function getOutgoingConnections(node){
+  return node.connections.map(c => ({...c, target: findNode(c.toId)}));
+}
+function addNode(opts){
+  const node = {
+    id: uid(),
+    label: opts.label || ('Node ' + (state.nodes.length+1)),
+    address: opts.address || [],
+    x: opts.x || (Math.random()*800-400),
+    y: opts.y || (Math.random()*600-300),
+    connections: opts.connections || []
+  };
+  state.nodes.push(node);
+  saveState();
+  refreshUI();
+  draw();
+  return node;
+}
+function deleteNode(id){
+  // Remove all connections referencing this node; but prevent orphans: nodes that only had this parent will become root
+  // Ensure "each non-root must have a connection to a parent node". We'll allow deletion only if either child nodes have other parents or the user confirms convert to root.
+  const node = findNode(id);
+  if(!node) return;
+  // find children (nodes that reference this.id in a connection)
+  const children = state.nodes.filter(n => n.connections.some(c => c.toId === id));
+  if(children.length){
+    // check if each child has other parent connections
+    const orphan = children.find(child => {
+      const parentConnections = child.connections.filter(cc => cc.toId === id);
+      // count parents for child: parents are nodes that have connection to child id
+      const parents = state.nodes.filter(n => n.connections.some(c=>c.toId === child.id));
+      return parents.length <= 1; // would orphan
+    });
+    if(orphan){
+      if(!confirm('Deleting this node will orphan at least one child node (make it root). Proceed?')) return;
+    }
+  }
+  // remove outgoing references to it and others' connections to it
+  state.nodes.forEach(n=> n.connections = n.connections.filter(c=> c.toId !== id));
+  state.nodes = state.nodes.filter(n=> n.id !== id);
+  if(selectedNodeId === id) selectedNodeId = null;
+  saveState();
+  refreshUI();
+  draw();
+}
+
+function addConnection(fromId,toId,pin){
+  const from = findNode(fromId), to=findNode(toId);
+  if(!from || !to) return;
+  // prevent duplicate to same soId+pin
+  if(from.connections.some(c=> c.toId === toId && c.pin === pin)) return;
+  from.connections.push({ toId: toId, pin: pin||Math.floor(Math.random()*250)+1 });
+  saveState();
+  refreshUI();
+  draw();
+}
+function removeConnection(fromId,toId){
+  const from = findNode(fromId);
+  if(!from) return;
+  // If removing parent connection would orphan toId (no other parents), prevent or confirm
+  const target = findNode(toId);
+  const parents = state.nodes.filter(n => n.connections.some(c => c.toId === toId));
+  if(parents.length <= 1){
+    if(!confirm('Removing this connection will orphan node "'+ (target.label||'') +'". Are you sure?')) return;
+  }
+  from.connections = from.connections.filter(c=> c.toId !== toId);
+  saveState();
+  refreshUI();
+  draw();
+}
+
+// UI: selection and panels
+const selTitle = document.getElementById('sel-title');
+const selAddress = document.getElementById('sel-address');
+const selPin = document.getElementById('sel-pin');
+const connectionsList = document.getElementById('connections-list');
+const logEl = document.getElementById('log');
+const simSource = document.getElementById('sim-source');
+const simDestNode = document.getElementById('sim-dest-node');
+const simDestInput = document.getElementById('sim-dest');
+
+function refreshUI(){
+  // populate selects
+  simSource.innerHTML = '<option value="">-- select source --</option>';
+  simDestNode.innerHTML = '<option value="">-- select dest node --</option>';
+  const nodeOptions = state.nodes.map(n => `<option value="${n.id}">${n.label} — ${stringifyAddr(n.address)}</option>`).join('');
+  simSource.innerHTML += nodeOptions;
+  simDestNode.innerHTML += nodeOptions;
+
+  // update selected node info
+  if(selectedNodeId){
+    const n = findNode(selectedNodeId);
+    selTitle.textContent = n.label;
+    selAddress.textContent = 'Address: ' + stringifyAddr(n.address);
+    selPin.textContent = 'Out: ' + n.connections.length + ' ⋅ in';
+    // list connections
+    const outs = getOutgoingConnections(n);
+    if(outs.length === 0) connectionsList.textContent = 'No outgoing connections';
+    else{
+      connectionsList.innerHTML = '';
+      outs.forEach(o=>{
+        const div = document.createElement('div');
+        div.className = 'list-item';
+        div.innerHTML = `
+          <div style="flex:1">
+            <div style="font-weight:700">${o.target? o.target.label : '(unknown)'}</div>
+            <div class="muted small">${o.target? stringifyAddr(o.target.address) : 'address unknown'}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px">
+            <div class="pin-badge">${o.pin}</div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-remove-conn small secondary" data-from="${n.id}" data-to="${o.toId}">Remove</button>
+            </div>
+          </div>
+        `;
+        connectionsList.appendChild(div);
+      });
+      // hook remove buttons
+      Array.from(connectionsList.querySelectorAll('.btn-remove-conn')).forEach(b=>{
+        b.addEventListener('click', e=>{
+          removeConnection(b.dataset.from, b.dataset.to);
+        });
+      });
+    }
+  }else{
+    selTitle.textContent = '—';
+    selAddress.textContent = '—';
+    selPin.textContent = '—';
+    connectionsList.textContent = 'Select a node to see its connections';
+  }
+
+  // Update node list on right panel small (if needed)
+}
+
+// Drawing
+function worldToScreen(x,y){
+  return { x: (x*view.scale + view.tx), y: (y*view.scale + view.ty) };
+}
+function screenToWorld(x,y){
+  return { x: (x - view.tx) / view.scale, y: (y - view.ty) / view.scale };
+}
+
+function draw(){
+  // full redraw
+  ctx.clearRect(0,0,canvas.width/DPR, canvas.height/DPR);
+  // background grid
+  drawGrid();
+  // draw connections
+  for(const n of state.nodes){
+    for(const c of n.connections){
+      const target = findNode(c.toId);
+      if(!target) continue;
+      drawConnection(n, target, c.pin);
+    }
+  }
+  // draw nodes
+  for(const n of state.nodes){
+    drawNode(n, n.id === selectedNodeId);
+  }
+}
+
+function drawGrid(){
+  const w = canvas.width / DPR, h = canvas.height / DPR;
+  ctx.save();
+  ctx.translate(view.tx % (40*view.scale), view.ty % (40*view.scale));
+  ctx.globalAlpha = 0.06;
+  ctx.fillStyle = '#082033';
+  // vertical lines
+  for(let x=-1000; x < w+1000; x += 40*view.scale) {
+    ctx.fillRect(x, 0, 1, h);
+  }
+  // horizontal
+  for(let y=-1000; y < h+1000; y += 40*view.scale) {
+    ctx.fillRect(0, y, w, 1);
+  }
+  ctx.restore();
+}
+
+function drawNode(n, selected){
+  const pos = worldToScreen(n.x, n.y);
+  const w = 150 * Math.min(1, view.scale);
+  const h = 58 * Math.min(1, view.scale);
+  ctx.save();
+  ctx.translate(pos.x, pos.y);
+  // node rectangle
+  ctx.beginPath();
+  roundRect(ctx, -w/2, -h/2, w, h, 12 * Math.min(1, view.scale));
+  ctx.fillStyle = selected ? 'linear-gradient(0deg,#062b22,#05313f)' : 'rgba(255,255,255,0.02)';
+  // manual gradient
+  const g = ctx.createLinearGradient(-w/2, -h/2, w/2, h/2);
+  g.addColorStop(0, selected ? '#053f3a' : 'rgba(255,255,255,0.02)');
+  g.addColorStop(1, selected ? '#042c3a' : 'rgba(255,255,255,0.01)');
+  ctx.fillStyle = g;
+  ctx.fill();
+  // border
+  ctx.lineWidth = selected ? 2 : 1;
+  ctx.strokeStyle = selected ? '#6EE7B7' : 'rgba(255,255,255,0.04)';
+  ctx.stroke();
+
+  // label
+  ctx.fillStyle = '#dff6ee';
+  ctx.font = `${14 * Math.min(1, view.scale)}px system-ui, sans-serif`;
+  ctx.textAlign = 'left';
+  ctx.fillText(n.label, -w/2 + 12, -h/2 + 20);
+
+  // address
+  ctx.fillStyle = 'rgba(255,255,255,0.75)';
+  ctx.font = `${12 * Math.min(1, view.scale)}px monospace`;
+  ctx.fillText(stringifyAddr(n.address), -w/2 + 12, -h/2 + 40);
+
+  ctx.restore();
+}
+
+function drawConnection(from, to, pin, highlight=false){
+  const a = worldToScreen(from.x, from.y);
+  const b = worldToScreen(to.x, to.y);
+  // line with arrow
+  const dx = b.x - a.x, dy = b.y - a.y;
+  const dist = Math.hypot(dx,dy);
+  const nx = dx/dist, ny = dy/dist;
+  const start = { x: a.x + nx * 50 * Math.min(1, view.scale), y: a.y + ny * 30* Math.min(1, view.scale) };
+  const end = { x: b.x - nx * 50 * Math.min(1, view.scale), y: b.y - ny * 30* Math.min(1, view.scale) };
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = highlight ? '#6EE7B7' : 'rgba(255,255,255,0.08)';
+  ctx.fillStyle = highlight ? '#6EE7B7' : 'rgba(255,255,255,0.06)';
+  ctx.lineWidth = highlight ? 3 : 1.4;
+  // curve
+  ctx.beginPath();
+  const mx = (start.x + end.x)/2 + (ny * 20); // slight arc
+  const my = (start.y + end.y)/2 - (nx * 20);
+  ctx.moveTo(start.x, start.y);
+  ctx.quadraticCurveTo(mx,my, end.x, end.y);
+  ctx.stroke();
+  // arrow head
+  const ang = Math.atan2(end.y - mx + 0, end.x - mx + 0); // approximate
+  // simpler: draw small triangle pointing to end direction
+  const angle = Math.atan2(end.y - start.y, end.x - start.x);
+  const ah = 8 * Math.min(1, view.scale);
+  ctx.beginPath();
+  ctx.moveTo(end.x, end.y);
+  ctx.lineTo(end.x - ah*Math.cos(angle-0.4), end.y - ah*Math.sin(angle-0.4));
+  ctx.lineTo(end.x - ah*Math.cos(angle+0.4), end.y - ah*Math.sin(angle+0.4));
+  ctx.closePath();
+  ctx.fill();
+  // pin label at mid
+  ctx.fillStyle = 'rgba(255,255,255,0.9)';
+  ctx.font = `${11 * Math.min(1, view.scale)}px monospace`;
+  ctx.textAlign = 'center';
+  const labelPos = getQuadraticPoint(start, {x:mx,y:my}, end, 0.5);
+  ctx.fillText('pin:'+pin, labelPos.x, labelPos.y - 6);
+  ctx.restore();
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.arcTo(x + w, y, x + w, y + h, r);
+  ctx.arcTo(x + w, y + h, x, y + h, r);
+  ctx.arcTo(x, y + h, x, y, r);
+  ctx.arcTo(x, y, x + w, y, r);
+  ctx.closePath();
+}
+
+// quadratic curve point helper
+function getQuadraticPoint(p0, p1, p2, t){
+  const x = (1-t)*(1-t)*p0.x + 2*(1-t)*t*p1.x + t*t*p2.x;
+  const y = (1-t)*(1-t)*p0.y + 2*(1-t)*t*p1.y + t*t*p2.y;
+  return {x,y};
+}
+
+// Canvas interactions: pan, zoom, node drag, right-click
+let draggingNode = null;
+let dragNodeOffset = {x:0,y:0};
+
+canvas.addEventListener('mousedown', (e)=>{
+  canvas.focus();
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left);
+  const y = (e.clientY - rect.top);
+
+  // detect click on node (in screen coords)
+  const hit = hitTestNode(x,y);
+  if(e.button === 2){
+    // right click: context actions
+    e.preventDefault();
+    if(hit){
+      selectedNodeId = hit.id;
+      refreshUI();
+      draw();
+      showNodeContext(hit, e.clientX, e.clientY);
+      return;
+    }
+  }
+  if(hit){
+    selectedNodeId = hit.id;
+    draggingNode = hit;
+    dragNodeOffset = { x: hit.x - screenToWorld(x,y).x, y: hit.y - screenToWorld(x,y).y };
+    // if adding connection mode and from set, choose target
+    if(addingConnection.from){
+      if(addingConnection.from === hit.id){ // can't connect to itself
+        alert('Cannot connect node to itself');
+        addingConnection = {from:null}; document.getElementById('btn-add-connection').classList.remove('active'); return;
+      }
+      // create connection
+      const pin = Math.floor(Math.random()*200)+1;
+      addConnection(addingConnection.from, hit.id, pin);
+      addingConnection = {from:null};
+      document.getElementById('btn-add-connection').classList.remove('active');
+      return;
+    }
+    refreshUI();
+    draw();
+    return;
+  } else {
+    // start panning canvas
+    draggingCanvas = true;
+    dragStart = { x: e.clientX, y: e.clientY, tx: view.tx, ty: view.ty };
+    canvas.style.cursor = 'grabbing';
+  }
+});
+
+canvas.addEventListener('mousemove', (e)=>{
+  const rect = canvas.getBoundingClientRect();
+  const x = (e.clientX - rect.left);
+  const y = (e.clientY - rect.top);
+  if(draggingNode){
+    const world = screenToWorld(x,y);
+    draggingNode.x = world.x + dragNodeOffset.x;
+    draggingNode.y = world.y + dragNodeOffset.y;
+    saveState();
+    draw();
+  } else if(draggingCanvas && dragStart){
+    view.tx = dragStart.tx + (e.clientX - dragStart.x);
+    view.ty = dragStart.ty + (e.clientY - dragStart.y);
+    document.getElementById('zoom-label').textContent = Math.round(view.scale*100)+'%';
+    draw();
+  }
+});
+
+canvas.addEventListener('mouseup', (e)=>{
+  draggingNode = null;
+  draggingCanvas = false;
+  canvas.style.cursor = 'grab';
+});
+canvas.addEventListener('mouseleave', ()=>{ draggingNode=null; draggingCanvas=false; });
+
+canvas.addEventListener('wheel', (e)=>{
+  e.preventDefault();
+  const rect = canvas.getBoundingClientRect();
+  const px = e.clientX - rect.left;
+  const py = e.clientY - rect.top;
+  // zoom around cursor
+  const oldScale = view.scale;
+  const delta = -e.deltaY * 0.0015;
+  view.scale = clamp(view.scale * (1 + delta), 0.25, 3.5);
+  // adjust translation to keep cursor anchored
+  view.tx = px - ( (px - view.tx) * (view.scale / oldScale) );
+  view.ty = py - ( (py - view.ty) * (view.scale / oldScale) );
+  document.getElementById('zoom-label').textContent = Math.round(view.scale*100)+'%';
+  draw();
+}, { passive:false });
+
+// hit test node by screen coords
+function hitTestNode(sx, sy){
+  for(let i=state.nodes.length-1;i>=0;i--){
+    const n = state.nodes[i];
+    const pos = worldToScreen(n.x, n.y);
+    const w = 150 * Math.min(1, view.scale);
+    const h = 58 * Math.min(1, view.scale);
+    if(sx >= pos.x - w/2 && sx <= pos.x + w/2 && sy >= pos.y - h/2 && sy <= pos.y + h/2){
+      return n;
+    }
+  }
+  return null;
+}
+
+// Node context menu (simple)
+function showNodeContext(node, clientX, clientY){
+  // small built-in prompt menu
+  const menu = document.createElement('div');
+  menu.style.position='fixed'; menu.style.left=clientX+'px'; menu.style.top=clientY+'px';
+  menu.style.background='linear-gradient(180deg,#021827,#041624)'; menu.style.padding='8px'; menu.style.borderRadius='8px';
+  menu.style.boxShadow='0 12px 30px rgba(0,0,0,0.6)'; menu.style.zIndex=999;
+  menu.innerHTML = `
+    <div style="padding:6px 8px;cursor:pointer" id="m-edit">Edit Node</div>
+    <div style="padding:6px 8px;cursor:pointer" id="m-delete">Delete Node</div>
+    <div style="padding:6px 8px;cursor:pointer" id="m-start-from">Use as Simulation Source</div>
+    <div style="padding:6px 8px;cursor:pointer" id="m-connect-to">Start connection from here</div>
+  `;
+  document.body.appendChild(menu);
+  const removeMenu = ()=> menu.remove();
+  setTimeout(()=>document.addEventListener('click', removeMenu, { once:true }));
+  menu.querySelector('#m-edit').addEventListener('click', ()=>{
+    removeMenu(); openModalFor(node);
+  });
+  menu.querySelector('#m-delete').addEventListener('click', ()=>{
+    removeMenu(); deleteNode(node.id);
+  });
+  menu.querySelector('#m-start-from').addEventListener('click', ()=>{
+    removeMenu();
+    simSource.value = node.id;
+  });
+  menu.querySelector('#m-connect-to').addEventListener('click', ()=>{
+    removeMenu();
+    addingConnection.from = node.id;
+    document.getElementById('btn-add-connection').classList.add('active');
+    alert('Now click the node you want to connect to.');
+  });
+}
+
+// Buttons
+document.getElementById('btn-add-node').addEventListener('click', ()=>{
+  openModalFor();
+});
+document.getElementById('btn-edit-node').addEventListener('click', ()=> {
+  if(!selectedNodeId) { alert('Select a node first'); return; }
+  openModalFor(findNode(selectedNodeId));
+});
+document.getElementById('btn-delete-node').addEventListener('click', ()=> {
+  if(!selectedNodeId) { alert('Select a node first'); return; }
+  deleteNode(selectedNodeId);
+});
+document.getElementById('btn-center-node').addEventListener('click', ()=> {
+  if(!selectedNodeId) { alert('Select a node first'); return; }
+  const n = findNode(selectedNodeId);
+  // center node
+  const screenCenter = { x: canvas.clientWidth/2, y: canvas.clientHeight/2 };
+  view.tx = screenCenter.x - n.x * view.scale;
+  view.ty = screenCenter.y - n.y * view.scale;
+  draw();
+});
+document.getElementById('btn-add-connection').addEventListener('click', (e)=>{
+  if(addingConnection.from){
+    addingConnection = {from:null};
+    e.target.classList.remove('active');
+  } else {
+    if(!selectedNodeId){ alert('Select a source node first (click a node)'); return; }
+    addingConnection.from = selectedNodeId;
+    e.target.classList.add('active');
+    alert('Now click the target node to create a connection. (Right-click to cancel)');
+  }
+});
+document.getElementById('btn-clear').addEventListener('click', ()=> {
+  if(!confirm('Clear all nodes and connections?')) return;
+  state.nodes = [];
+  saveState();
+  refreshUI();
+  draw();
+});
+document.getElementById('btn-export').addEventListener('click', ()=>{
+  const data = JSON.stringify(state, null, 2);
+  const blob = new Blob([data], {type:'application/json'});
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = 'net-state.json'; a.click();
+  URL.revokeObjectURL(url);
+});
+document.getElementById('btn-import').addEventListener('click', ()=>{
+  const inp = document.createElement('input'); inp.type='file'; inp.accept='application/json';
+  inp.onchange = (ev)=>{
+    const f = ev.target.files[0];
+    if(!f) return;
+    const r = new FileReader();
+    r.onload = ()=> {
+      try {
+        const obj = JSON.parse(r.result);
+        state = obj;
+        saveState();
+        refreshUI();
+        draw();
+      } catch(e){ alert('Invalid JSON'); }
+    };
+    r.readAsText(f);
+  };
+  inp.click();
+});
+
+// Modal logic
+const modal = document.getElementById('modal');
+const modalTitle = document.getElementById('modal-title');
+const nodeLabelInput = document.getElementById('node-label');
+const nodeAddressInput = document.getElementById('node-address');
+const nodeParentSelect = document.getElementById('node-parent');
+let editingNodeId = null;
+
+function openModalFor(node){
+  // populate parent select
+  nodeParentSelect.innerHTML = '<option value="">-- none (root) --</option>';
+  state.nodes.forEach(n => {
+    nodeParentSelect.innerHTML += `<option value="${n.id}">${n.label} — ${stringifyAddr(n.address)}</option>`;
+  });
+  if(node){
+    editingNodeId = node.id;
+    modalTitle.textContent = 'Edit Node';
+    nodeLabelInput.value = node.label;
+    nodeAddressInput.value = node.address.join(',');
+    nodeParentSelect.value = ''; // auto select none; we'll let user choose
+  } else {
+    editingNodeId = null;
+    modalTitle.textContent = 'Create Node';
+    nodeLabelInput.value = '';
+    nodeAddressInput.value = '';
+    nodeParentSelect.value = '';
+  }
+  modal.style.display = 'flex';
+}
+document.getElementById('modal-cancel').addEventListener('click', ()=> modal.style.display = 'none');
+document.getElementById('modal-save').addEventListener('click', ()=>{
+  const label = nodeLabelInput.value.trim() || ('Node ' + (state.nodes.length+1));
+  const address = nodeAddressInput.value.split(',').map(s=>s.trim()).filter(Boolean).map(Number).filter(n=>!Number.isNaN(n));
+  const parentId = nodeParentSelect.value || null;
+  if(editingNodeId){
+    const node = findNode(editingNodeId);
+    node.label = label;
+    node.address = address;
+    // if parent selected, add connection from parent->this node if it doesn't exist
+    if(parentId){
+      const parent = findNode(parentId);
+      if(parent && !parent.connections.some(c=> c.toId === node.id)){
+        parent.connections.push({ toId: node.id, pin: Math.floor(Math.random()*200)+1 });
+      }
+    }
+    saveState();
+    refreshUI();
+    draw();
+  } else {
+    const n = addNode({ label, address });
+    if(parentId){
+      const parent = findNode(parentId);
+      if(parent) parent.connections.push({ toId: n.id, pin: Math.floor(Math.random()*200)+1 });
+      saveState();
+      refreshUI();
+      draw();
+    }
+  }
+  modal.style.display = 'none';
+});
+
+// Simulation
+function log(msg, type='info'){
+  const el = document.createElement('div');
+  el.className = 'step';
+  el.innerHTML = `<div style="font-weight:700">${type}</div><div style="margin-top:6px">${msg}</div>`;
+  logEl.prepend(el);
+}
+function clearLog(){ logEl.innerHTML = ''; }
+
+document.getElementById('btn-run-sim').addEventListener('click', ()=> runSimulation(true));
+document.getElementById('btn-run-fast').addEventListener('click', ()=> runSimulation(false));
+document.getElementById('btn-stop-sim').addEventListener('click', ()=> simulationRun.stop = true);
+
+function parseAddressString(s){
+  if(!s) return [];
+  return s.split(',').map(t=>t.trim()).filter(Boolean).map(Number).filter(n=>!Number.isNaN(n));
+}
+
+async function runSimulation(stepByStep=true){
+  const sourceId = simSource.value;
+  let destAddr = parseAddressString(simDestInput.value);
+  if(!destAddr.length){
+    if(simDestNode.value){
+      const targetNode = findNode(simDestNode.value);
+      if(!targetNode){ alert('Destination node not found'); return; }
+      destAddr = targetNode.address.slice();
+    } else {
+      alert('Please choose source and destination (address or node)');
+      return;
+    }
+  }
+  if(!sourceId){ alert('Choose source node'); return; }
+  simulationRun.running = true; simulationRun.stop = false;
+  clearLog();
+  // run loop like routing
+  let current = findNode(sourceId);
+  if(!current) return;
+  const pocket = { address: destAddr.slice() };
+  log(`<b>Starting simulation</b><div class="muted small">Source: ${current.label} — ${stringifyAddr(current.address)}<br>Destination: ${stringifyAddr(pocket.address)}</div>`, 'start');
+  // center & highlight first
+  centerOnNode(current);
+  await highlightNode(current, 600);
+  let steps = 0;
+  const visited = new Set();
+  let delivered = false;
+
+  while(steps < 128 && !simulationRun.stop){
+    steps++;
+    const you = current.address;
+    // if packet for us
+    if(eq(you, pocket.address)){
+      log(`<b>Delivered</b>: Node ${current.label} address matches destination: ${stringifyAddr(you)}`, 'delivered');
+      delivered = true;
+      await highlightNode(current, 800, '#6EE7B7');
+      break;
+    }
+    // if no connections
+    if(current.connections.length === 0){
+      log(`<b>Dead end</b>: Node ${current.label} has no outgoing connections. Packet dropped.`, 'dead');
+      break;
+    }
+
+    // choose best connection according to algorithm
+    log(`<b>Selecting best outgoing connection from ${current.label}</b>`, 'step');
+    // compute isDirectChildren
+    const isDirectChildren = isChildren(pocket.address, you);
+    log(`isDirectChildren? <code>${isDirectChildren}</code> (destination is descendant of current node?)`);
+
+    let sendConnection = current.connections[0];
+    let bestMatchIndex = matchIndex(match(findNode(sendConnection.toId).address, pocket.address));
+    let bestAddressLength = findNode(sendConnection.toId).address.length;
+    // explain initial candidate
+    logCandidate(sendConnection, pocket, current);
+
+    for(let i=1;i<current.connections.length;i++){
+      const cand = current.connections[i];
+      const candNode = findNode(cand.toId);
+      const m = match(candNode.address, pocket.address);
+      const idx = matchIndex(m);
+      logCandidate(cand, pocket, current);
+      if(idx > bestMatchIndex){
+        log(`✓ Candidate ${candNode.label} wins by higher matchIndex (${idx} > ${bestMatchIndex})`);
+        sendConnection = cand;
+        bestMatchIndex = idx;
+        bestAddressLength = candNode.address.length;
+      } else if(idx === bestMatchIndex && candNode.address.length > bestAddressLength){
+        log(`✓ Candidate ${candNode.label} wins tie-breaker by longer address length (${candNode.address.length} > ${bestAddressLength})`);
+        sendConnection = cand;
+        bestMatchIndex = idx;
+        bestAddressLength = candNode.address.length;
+      } else {
+        log(`✗ Candidate ${candNode.label} not chosen (idx ${idx})`);
+      }
+    }
+
+    // if the pocket is for a direct child, but the node is the last (virtual children)
+    const sendConnNode = findNode(sendConnection.toId);
+    if(isDirectChildren && !isChildren(sendConnNode.address, you)){
+      log(`<b>Routing blocked</b>: destination is a direct child of current node, but chosen connection (${sendConnNode.label}) is NOT a child of current; aborting send (returns 0)`, 'blocked');
+      break;
+    }
+
+    // else send via pin
+    log(`<b>Forwarding</b> via node ${sendConnNode.label} (pin ${sendConnection.pin}). matchIndex=${bestMatchIndex}`, 'forward');
+    // animate connection highlight
+    await highlightConnection(current, sendConnNode, 700);
+    // move to next node
+    current = sendConnNode;
+    centerOnNode(current);
+    await highlightNode(current, 400);
+    // loop detection
+    if(visited.has(current.id)){
+      log('<b>Loop detected</b> — stopping simulation', 'dead');
+      break;
+    }
+    visited.add(current.id);
+    if(stepByStep){
+      // wait for user to continue (simulate step) - but per requirements we must show step-by-step automatically,
+      // we'll pause briefly so user can read. (No waiting for user.)
+      await new Promise(r => setTimeout(r, 600));
+    } else {
+      // fast mode
+      await new Promise(r => setTimeout(r, 120));
+    }
+  }
+
+  if(simulationRun.stop){
+    log('<b>Simulation stopped</b>', 'stop');
+  } else if(!delivered){
+    log('<b>Simulation ended</b>: destination not reached', 'end');
+  }
+  simulationRun.running = false;
+  simulationRun.stop = false;
+}
+
+// helper log candidate match details
+function logCandidate(connection, pocket, current){
+  const target = findNode(connection.toId);
+  if(!target) { log(`Candidate -> (unknown) pin ${connection.pin}`); return; }
+  const connAddr = target.address;
+  const m = match(connAddr, pocket.address);
+  const idx = matchIndex(m);
+  log(`<b>Candidate:</b> ${target.label} — address ${stringifyAddr(connAddr)} <div class="muted small">match.positive=${m.positive}, match.negative=${m.negative}, matchIndex=${idx}</div>`, 'candidate');
+}
+
+// animations
+function highlightNode(node, ms=500, color='#6EE7B7'){
+  return new Promise(r=>{
+    const start = Date.now();
+    const orig = node._highlight || 0;
+    node._highlight = ms;
+    (function anim(){
+      draw();
+      // draw highlight circle around node
+      const pos = worldToScreen(node.x, node.y);
+      ctx.save();
+      ctx.globalAlpha = 0.2 + 0.2*Math.sin((Date.now()-start)/120);
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 60 * view.scale, 0, Math.PI*2);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.restore();
+      if(Date.now() - start < ms) requestAnimationFrame(anim); else {
+        node._highlight = 0;
+        draw();
+        r();
+      }
+    })();
+  });
+}
+
+function highlightConnection(a,b,ms=500){
+  return new Promise(r=>{
+    const start = Date.now();
+    (function anim(){
+      draw();
+      // draw highlighted connection
+      drawConnection(a,b,'',true);
+      if(Date.now() - start < ms) requestAnimationFrame(anim); else r();
+    })();
+  });
+}
+
+function centerOnNode(n){
+  const screenCenter = { x: canvas.clientWidth/2, y: canvas.clientHeight/2 };
+  view.tx = screenCenter.x - n.x * view.scale;
+  view.ty = screenCenter.y - n.y * view.scale;
+  draw();
+}
+
+// initial draw loop
+(function tick(){ draw(); requestAnimationFrame(tick); })();
+
+// Load / save UI interactions
+document.addEventListener('keydown', (e)=>{
+  if(e.key === 'Delete' && selectedNodeId) deleteNode(selectedNodeId);
+  if(e.key === 's' && (e.ctrlKey||e.metaKey)){ e.preventDefault(); saveState(); alert('Saved'); }
+});
+
+// small utility: when state changes, refresh UI
+function stateChanged(){ saveState(); refreshUI(); draw(); }
+
+// ensure right panel lists are refreshed when nodes change
+(function monitorStateChanges(){
+  // naive periodic refresh (keeps selects in sync)
+  setInterval(refreshUI, 600);
+})();
+
+// Prevent context menu on canvas
+canvas.addEventListener('contextmenu', (e)=> e.preventDefault());
+
+loadState();
+refreshUI();
+draw();
+</script>
+</body>
+</html>
