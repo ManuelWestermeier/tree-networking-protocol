@@ -41,6 +41,7 @@ struct PhysikalNode
   }
 
   void receivePocket(uint8_t pin);
+  void handleMenagementFrame(uint8_t pin);
   void sendNormalPocket(Pocket &p, uint8_t pin);
 
   // ---- Queue helpers ----

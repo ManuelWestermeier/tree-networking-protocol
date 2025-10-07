@@ -8,8 +8,12 @@ void PhysikalNode::sendNormalPocket(Pocket &p, uint8_t pin)
     Serial.println(pin);
 
     pinMode(pin, OUTPUT);
+    // start signal
     digitalWrite(pin, HIGH);
-    delayMicroseconds(BIT_DELAY * 2);
+    delayMicroseconds(BIT_DELAY);
+    // data frame
+    digitalWrite(pin, HIGH);
+    delayMicroseconds(BIT_DELAY);
 
     for (auto a : p.address)
     {
