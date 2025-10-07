@@ -9,7 +9,7 @@ void PhysikalNode::sendNormalPocket(Pocket &p, uint8_t pin)
 
     pinMode(pin, OUTPUT);
     digitalWrite(pin, HIGH);
-    delayMicroseconds(BIT_DELAY);
+    delayMicroseconds(BIT_DELAY * 2);
 
     for (auto a : p.address)
     {

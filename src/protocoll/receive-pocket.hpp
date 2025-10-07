@@ -8,6 +8,16 @@ size_t ignorePoolIndex = 0;
 
 void PhysikalNode::receivePocket(uint8_t pin)
 {
+    bool isDataFrame = digitalRead(pin);
+    delayMicroseconds(BIT_DELAY);
+
+    // Meanagement
+    if (!isDataFrame)
+    {
+        Serial.println("Receaved Data Frame");
+        return;
+    }
+
     Address address;
 
     while (true)
