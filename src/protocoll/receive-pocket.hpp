@@ -95,6 +95,7 @@ void PhysikalNode::receivePocket(uint8_t pin)
     if (!isDataFrame)
     {
         handleMenagementFrame(pin);
+        return;
     }
 
     Address address;
